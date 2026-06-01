@@ -1,0 +1,2153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1a1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Goat Desk">
+<link rel="manifest" href="manifest.json">
+<title>Goat Desk</title>
+<style>
+* { box-sizing: border-box; }
+body { margin:0; font-family:sans-serif; background:#1a1a1a; color:#eee; font-size:18px; }
+
+header {
+  background:#111;
+  padding:12px 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-bottom:2px solid #3a7;
+}
+header span { font-size:22px; font-weight:bold; color:#3a7; }
+header small { color:#888; font-size:14px; }
+
+.screen { display:none; padding:10px; }
+.screen.active { display:block; }
+
+.box { background:#2a2a2a; padding:14px; margin-bottom:10px; border-radius:8px; }
+
+button {
+  display:inline-block;
+  padding:20px 22px;
+  margin:5px;
+  font-size:18px;
+  background:#3a7;
+  border:none;
+  border-radius:8px;
+  color:white;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+button:active { opacity:0.8; }
+button.secondary { background:#555; }
+button.danger { background:#8b0000; }
+button.wide { width:calc(100% - 10px); display:block; }
+
+label { display:block; margin-top:12px; color:#aaa; font-size:15px; }
+
+input, select, textarea {
+  width:100%;
+  padding:12px;
+  margin-top:4px;
+  font-size:18px;
+  background:#333;
+  color:#eee;
+  border:1px solid #555;
+  border-radius:6px;
+}
+input:focus, select:focus, textarea:focus {
+  outline:none;
+  border-color:#3a7;
+}
+
+.good  { background:#1b4d1e !important; border-left:4px solid #3a7; }
+.warn  { background:#4d3b00 !important; border-left:4px solid #c90; }
+.bad   { background:#4d0000 !important; border-left:4px solid #c00; }
+
+.log { padding:10px; margin-bottom:5px; border-radius:6px; background:#2a2a2a; font-size:15px; text-align:left; }
+.log .log-top { display:flex; align-items:baseline; gap:8px; }
+.log .log-animal { font-weight:bold; color:#3a7; font-size:16px; }
+.log .log-type { color:#aaa; text-transform:uppercase; font-size:12px; }
+.log .log-detail { margin-top:3px; text-align:left; }
+.log .log-time { color:#666; font-size:13px; margin-top:2px; text-align:left; }
+
+.ref { color:#666; font-size:12px; margin-top:2px; }
+
+.dose-display {
+  background:#1a3a1a;
+  border:1px solid #3a7;
+  border-radius:6px;
+  padding:10px;
+  margin-top:8px;
+  font-size:18px;
+  text-align:center;
+  color:#3a7;
+  font-weight:bold;
+}
+
+.nav-bar {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-bottom:10px;
+}
+.nav-bar button { padding:10px 14px; font-size:14px; margin:0; }
+
+.entry-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:8px;
+}
+.entry-header h3 { margin:0; color:#3a7; }
+
+.formula-row {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:8px;
+}
+.formula-row input { flex:1; }
+
+/* Settings table */
+.formula-table { width:100%; border-collapse:collapse; font-size:14px; }
+.formula-table th { text-align:left; color:#aaa; padding:6px; border-bottom:1px solid #444; }
+.formula-table td { padding:6px; border-bottom:1px solid #333; }
+.formula-table input { padding:6px; font-size:14px; }
+
+.badge {
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:10px;
+  font-size:12px;
+  background:#3a7;
+  color:white;
+  margin-left:6px;
+}
+
+#syncStatus { font-size:13px; color:#888; margin-top:6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span>🐐 Goat Desk</span>
+  <small id="syncStatus">Offline mode</small>
+</header>
+
+<!-- ===== HOME ===== -->
+<div id="screen-home" class="screen active">
+  <div class="box">
+    <div class="nav-bar">
+      <button onclick="startFlow('weight')">⚖️ Weight</button>
+      <button onclick="startFlow('vitals')">❤️ Vitals</button>
+      <button onclick="startFlow('med')">💊 Med</button>
+      <button onclick="startFlow('hoof')">🦶 Hoof</button>
+      <button onclick="startFlow('obs')">👁️ Observe</button>
+      <button onclick="startFlow('birth')">🐣 Birth</button>
+      <button onclick="startFlow('activity')">📝 Activity</button>
+    </div>
+    <div class="nav-bar">
+      <button onclick="startFlow('wv')" class="secondary">Weight + Vitals</button>
+      <button onclick="startFlow('wvm')" class="secondary">Weight + Vitals + Med</button>
+    </div>
+    <div class="nav-bar">
+      <button onclick="show('history')" class="secondary">📋 History</button>
+      <button onclick="show('settings')" class="secondary">⚙️ Settings</button>
+      <button onclick="show('sync')" class="secondary">🔄 FarmOS Sync</button>
+    </div>
+  </div>
+
+  <div class="box" id="pendingBox" style="display:none;">
+    <strong>⏰ Scheduled Tasks</strong>
+    <div id="pendingList"></div>
+  </div>
+
+  <div class="box">
+    <strong>Recent</strong>
+    <div id="recent"></div>
+  </div>
+</div>
+
+<!-- ===== ENTRY ===== -->
+<div id="screen-entry" class="screen">
+  <div class="box">
+    <div class="entry-header">
+      <h3 id="entryTitle">Log</h3>
+      <button class="secondary" onclick="show('home')" style="padding:8px 12px;font-size:14px;">✕ Home</button>
+    </div>
+
+    <label>Animal</label>
+    <select id="goat"></select>
+    <label><input type="checkbox" id="stay"> Stay on same animal</label>
+
+    <label>Time</label>
+    <div style="display:flex;gap:6px;margin-top:4px;">
+      <input type="datetime-local" id="timestamp" style="flex:1">
+      <button onclick="setNow()" style="padding:10px;margin:0;font-size:13px;">Now</button>
+    </div>
+  </div>
+
+  <div class="box" id="inputs"></div>
+
+  <div class="box" style="display:flex;gap:8px;">
+    <button onclick="nextAction()" style="flex:1;">💾 Save + Next</button>
+    <button class="secondary" onclick="show('home')" style="flex:0 0 auto;">Home</button>
+  </div>
+</div>
+
+<!-- ===== HISTORY ===== -->
+<div id="screen-history" class="screen">
+  <div class="box">
+    <button class="secondary" onclick="show('home')">← Home</button>
+    <h3 style="margin:10px 0 6px;">History</h3>
+
+    <label>Animal</label>
+    <select id="filterGoat"><option value="">All Animals</option></select>
+
+    <label>Type</label>
+    <select id="filterType">
+      <option value="">All Types</option>
+      <option value="weight">Weight</option>
+      <option value="vitals">Vitals</option>
+      <option value="med">Med</option>
+      <option value="hoof">Hoof</option>
+      <option value="obs">Observation</option>
+      <option value="birth">Birth</option>
+      <option value="activity">Activity</option>
+    </select>
+
+    <label>Sort</label>
+    <select id="sortOrder">
+      <option value="desc">Newest first</option>
+      <option value="asc">Oldest first</option>
+      <option value="sev_desc">Severity (worst first)</option>
+      <option value="sev_asc">Severity (mildest first)</option>
+      <option value="pending">Scheduled tasks first</option>
+    </select>
+
+    <button onclick="renderHistory()" style="margin-top:8px;width:100%;">Apply Filter</button>
+  </div>
+
+  <div class="box" style="display:flex;gap:8px;align-items:center;">
+    <label style="margin:0;display:flex;align-items:center;gap:6px;flex:1;">
+      <input type="checkbox" id="selectAllLogs" onchange="toggleSelectAll(this.checked)" style="width:auto;margin:0;">
+      Select All
+    </label>
+    <button onclick="deleteSelected()" style="margin:0;background:#8b0000;padding:10px 16px;font-size:15px;">🗑️ Delete Selected</button>
+  </div>
+
+  <div id="historyLogs"></div>
+</div>
+
+<!-- ===== SETTINGS ===== -->
+<div id="screen-settings" class="screen">
+  <div class="box">
+    <button class="secondary" onclick="show('home')">← Home</button>
+    <h3 style="margin:10px 0 6px;">⚙️ Settings</h3>
+  </div>
+
+  <div class="box">
+    <strong>Med Formulas</strong>
+    <p style="color:#888;font-size:13px;">ml per lb of body weight. Round↓ sets per-med dose rounding. Save when done.</p>
+    <table class="formula-table">
+      <thead><tr><th>Medication</th><th>Dose</th><th>Unit</th><th>Route</th><th>Round↓</th><th>Fixed</th><th></th></tr></thead>
+      <tbody id="formulaRows"></tbody>
+    </table>
+    <datalist id="unitOptions">
+      <option value="ml">
+      <option value="cc">
+      <option value="oz">
+      <option value="tablet">
+      <option value="capsule">
+      <option value="scoop">
+      <option value="tsp">
+      <option value="tbsp">
+      <option value="g">
+    </datalist>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <input id="newMedName" placeholder="Med name" style="flex:1">
+      <input id="newMedDose" placeholder="ml/lb" type="number" step="0.01" style="width:90px">
+      <button onclick="addFormula()" style="margin:0;padding:10px;">Add</button>
+    </div>
+    <button onclick="saveFormulas()" style="margin-top:10px;width:100%;">💾 Save Formulas</button>
+  </div>
+
+  <div class="box">
+    <strong>Animal List</strong>
+    <p style="color:#888;font-size:13px;">Add or remove animals from the selector. Removed animals won't return on Fetch.</p>
+    <div id="animalList"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <input id="newAnimalName" placeholder="Animal name" style="flex:1">
+      <button onclick="addAnimal()" style="margin:0;padding:10px;">Add</button>
+    </div>
+    <div id="excludedList"></div>
+  </div>
+
+  <div class="box">
+    <strong>Data</strong>
+    <button class="wide secondary" onclick="exportLogs()">📤 Export Logs (JSON)</button>
+    <button class="wide secondary" onclick="document.getElementById('importFile').click()" style="margin-top:8px;">📥 Import Logs (JSON)</button>
+    <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importLogs(this)">
+    <div id="importResult" style="font-size:13px;color:#888;margin-top:6px;"></div>
+    <button class="wide danger" onclick="clearLogs()" style="margin-top:8px;">🗑️ Clear All Logs</button>
+  </div>
+</div>
+
+<!-- ===== FARMOS SYNC ===== -->
+<div id="screen-sync" class="screen">
+  <div class="box">
+    <button class="secondary" onclick="show('home')">← Home</button>
+    <h3 style="margin:10px 0 6px;">🔄 FarmOS Sync</h3>
+  </div>
+
+  <div class="box">
+    <strong>Connection</strong>
+    <label>FarmOS URL</label>
+    <input id="farmosUrl" placeholder="https://yourfarm.farmos.net" type="url">
+    <label>Username</label>
+    <input id="farmosUser" placeholder="farmOS username" autocomplete="username">
+    <label>Password</label>
+    <div style="display:flex;gap:6px;margin-top:4px;">
+      <input id="farmosPass" placeholder="farmOS password" type="password" autocomplete="current-password" style="flex:1;margin-top:0;">
+      <button onclick="togglePass()" id="showPassBtn" style="margin:0;padding:10px 14px;font-size:16px;background:#555;">👁</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button onclick="testFarmOS()" style="flex:1;margin:0;">Test Connection</button>
+      <button onclick="fetchAnimalUUIDs()" class="secondary" style="flex:1;margin:0;">🔄 Fetch Logs</button>
+    </div>
+    <div id="farmosTestResult" style="margin-top:8px;font-size:13px;color:#888;"></div>
+  </div>
+
+  <div class="box">
+    <strong>Sync</strong>
+    <p style="color:#888;font-size:13px;">Unsynced local logs: <span id="unsyncedCount">0</span></p>
+    <button onclick="syncToFarmOS()" style="width:100%;">⬆️ Push to FarmOS</button>
+    <div id="syncLog" style="margin-top:10px;font-size:13px;color:#888;max-height:200px;overflow-y:auto;white-space:pre-wrap;"></div>
+  </div>
+</div>
+
+<script>
+// ===== ANIMALS =====
+const DEFAULT_ANIMALS = [
+  "Athena","Blues","Brain","Bucko","BuckWheat",
+  "Caramel Macchiato","Cricket","Galaxy","Hurbert","Jazz",
+  "Lace Wing","LadyBug","Lulabye","Oats","Patty",
+  "Pinky","PJs","Rythum","Sooter","Stud Muffin",
+  "Tubbo","Vincent Van Goat"
+];
+
+let goats = JSON.parse(localStorage.getItem("goats") || "null") || [...DEFAULT_ANIMALS];
+let excludedAnimals = JSON.parse(localStorage.getItem("excludedAnimals") || "[]");
+let logs  = JSON.parse(localStorage.getItem("logs")  || "[]");
+let weights = JSON.parse(localStorage.getItem("weights") || "{}");
+
+let lastMed   = localStorage.getItem("lastMed")   || "";
+let lastRoute = localStorage.getItem("lastRoute") || "Oral";
+
+let formulas = JSON.parse(localStorage.getItem("formulas") || "null") || {
+  "Bactrim DS":      { dose: 0.04,  unit: "ml",  route: "Oral",    round: "none", fixed: false },
+  "CD&T":            { dose: 2.0,   unit: "ml",  route: "SQ",      round: "none", fixed: true  },
+  "Corid":           { dose: 1.2,   unit: "ml",  route: "Oral",    round: "none", fixed: false },
+  "Ivermectin":      { dose: 0.12,  unit: "ml",  route: "Oral",    round: "none", fixed: false },
+  "Penicillin":      { dose: 0.045, unit: "ml",  route: "SQ",      round: "none", fixed: false },
+  "Super B Complex": { dose: 0.04,  unit: "ml",  route: "SQ",      round: "none", fixed: false },
+  "UltraBoss":       { dose: 0.03,  unit: "ml",  route: "Topical", round: "none", fixed: false }
+};
+
+// ===== ANDROID BACK BUTTON =====
+window.addEventListener("popstate", () => {
+  const active = document.querySelector(".screen.active");
+  if (active && active.id !== "screen-home") {
+    show("home");
+  }
+});
+
+// Push a state so popstate fires on back button
+history.pushState({ page: "home" }, "");
+
+function show(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById("screen-"+id).classList.add("active");
+  if (id !== "home") history.pushState({ page: id }, "");
+  if (id === "home") { renderRecent(); }
+  if (id === "history") { renderHistory(); }
+  if (id === "settings") { renderSettings(); }
+  if (id === "sync") { renderSync(); }
+}
+
+// ===== FLOW =====
+let flow = [], step = 0, herdIndex = 0;
+
+const FLOWS = {
+  weight:   ["weight"],
+  vitals:   ["vitals"],
+  med:      ["med"],
+  hoof:     ["hoof"],
+  obs:      ["obs"],
+  birth:    ["birth"],
+  activity: ["activity"],
+  wv:       ["weight","vitals"],
+  wvm:      ["weight","vitals","med"]
+};
+
+const TYPE_LABELS = {
+  weight:   "⚖️ Weight",
+  vitals:   "❤️ Vitals",
+  med:      "💊 Medication",
+  hoof:     "🦶 Hoof",
+  obs:      "👁️ Observation",
+  birth:    "🐣 Birth",
+  activity: "📝 Activity"
+};
+
+function startFlow(type) {
+  flow = FLOWS[type] || [type];
+  step = 0;
+  herdIndex = 0;
+  populateGoatSelect();
+  setNow();
+  show("entry");
+  renderStep();
+}
+
+function populateGoatSelect() {
+  const sel = document.getElementById("goat");
+  sel.innerHTML = "";
+  goats.forEach(g => {
+    const o = document.createElement("option");
+    o.value = g; o.textContent = g;
+    sel.appendChild(o);
+  });
+  sel.selectedIndex = herdIndex;
+
+  // Keep herdIndex in sync when user manually picks an animal
+  sel.onchange = () => {
+    herdIndex = sel.selectedIndex;
+    // If on med step, update weight and recalculate dose for new animal
+    if (flow[step] === "med") {
+      const newW = parseFloat(weights[sel.value]) || 0;
+      const wEl = document.getElementById("f_medweight");
+      if (wEl) { wEl.value = newW || ""; calcDose(); }
+    }
+    // If on weight step, update the pre-filled weight
+    if (flow[step] === "weight") {
+      const wEl = document.getElementById("f_weight");
+      if (wEl) { wEl.value = weights[sel.value] || ""; wEl.select(); }
+    }
+  };
+
+  // also populate history filter
+  const fg = document.getElementById("filterGoat");
+  fg.innerHTML = "<option value=''>All Animals</option>";
+  goats.forEach(g => {
+    const o = document.createElement("option");
+    o.value = g; o.textContent = g;
+    fg.appendChild(o);
+  });
+}
+
+function setNow() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  document.getElementById("timestamp").value = local.toISOString().slice(0, 16);
+}
+
+// Returns current timestamp as full ISO string including seconds
+function getTimestamp() {
+  const v = document.getElementById("timestamp").value;
+  if (!v) return new Date().toISOString();
+  // datetime-local gives YYYY-MM-DDTHH:MM — append current seconds+ms so
+  // entries within the same minute sort in entry order, not alphabetically
+  const base = new Date(v);
+  const now = new Date();
+  base.setSeconds(now.getSeconds());
+  base.setMilliseconds(now.getMilliseconds());
+  return base.toISOString();
+}
+
+// ===== RENDER STEP =====
+function renderStep() {
+  window.scrollTo(0, 0);
+  const t = flow[step];
+  const g = document.getElementById("goat").value;
+  const box = document.getElementById("inputs");
+  const lw = weights[g] || "";
+
+  document.getElementById("entryTitle").textContent =
+    (TYPE_LABELS[t] || t) + " — " + g;
+
+  if (t === "weight") {
+    box.innerHTML = `
+      <label>Weight (lbs)</label>
+      <input id="f_weight" type="tel" inputmode="numeric" value="${lw}" placeholder="e.g. 10505 → 105.05">
+      <div id="weightDisplay" style="font-size:22px;text-align:center;padding:8px;color:#3a7;font-weight:bold;">${lw ? lw + " lbs" : ""}</div>
+    `;
+    const wEl = document.getElementById("f_weight");
+    // Auto-select so typing immediately overwrites
+    setTimeout(() => { wEl.focus(); wEl.select(); }, 10);
+    wEl.addEventListener("input", () => {
+      const raw = wEl.value.replace(/\D/g, "");
+      if (raw.length === 0) { document.getElementById("weightDisplay").textContent = ""; return; }
+      const num = (parseInt(raw, 10) / 100).toFixed(2);
+      document.getElementById("weightDisplay").textContent = num + " lbs";
+      wEl.dataset.parsed = num;
+    });
+  }
+
+  if (t === "vitals") {
+    box.innerHTML = `
+      <label>Temp (°F) <span class="ref">normal: 101–103.5</span></label>
+      <input id="f_temp" type="number" step="0.1" placeholder="e.g. 102.4">
+
+      <label>Heart Rate (bpm) <span class="ref">normal: 70–90</span></label>
+      <input id="f_hr" type="number" placeholder="e.g. 80">
+
+      <label>Respiration (breaths/min) <span class="ref">normal: 12–20</span></label>
+      <input id="f_resp" type="number" placeholder="e.g. 16">
+
+      <label>Rumen (sounds/min) <span class="ref">normal: 1–2</span></label>
+      <input id="f_rumen" type="number" placeholder="e.g. 1">
+
+      <label>FAMACHA Score</label>
+      <select id="f_famacha">
+        <option value="">-- not checked --</option>
+        <option>1</option><option>2</option>
+        <option>3</option><option>4</option><option>5</option>
+      </select>
+
+      <label>Notes</label>
+      <input id="f_vnotes" placeholder="Optional notes">
+    `;
+    document.getElementById("f_temp").oninput = updateVitalColors;
+    document.getElementById("f_hr").oninput = updateVitalColors;
+    document.getElementById("f_resp").oninput = updateVitalColors;
+    document.getElementById("f_rumen").oninput = updateVitalColors;
+    document.getElementById("f_famacha").onchange = updateVitalColors;
+    // color any pre-filled values immediately
+    updateVitalColors();
+  }
+
+  if (t === "med") {
+    const medNames = Object.keys(formulas);
+    const w = parseFloat(weights[g]) || 0;
+    const activeMed = (lastMed && formulas[lastMed]) ? lastMed : (medNames[0] || "");
+    const activeFormula = formulas[activeMed] || {};
+    const isFixed = activeFormula.fixed || false;
+    const unit = activeFormula.unit || "ml";
+    const firstDose = isFixed
+      ? activeFormula.dose || ""
+      : (w && activeFormula.dose) ? (w * activeFormula.dose).toFixed(2) : "";
+
+    box.innerHTML = `
+      <label>Medication</label>
+      <select id="f_med">${medNames.map(m => `<option${m===activeMed?" selected":""}>${m}</option>`).join("")}</select>
+
+      <div id="weightRow">
+        <label>Animal Weight (lbs) — used for dose calc</label>
+        <input id="f_medweight" type="number" step="0.1" value="${w || lw}" placeholder="lbs">
+      </div>
+
+      <div class="dose-display" id="doseDisplay">${firstDose ? firstDose + " " + unit : "enter weight"}</div>
+
+      <label>Dose — auto-calculated, editable</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="f_dose" type="number" step="0.01" value="${firstDose}" placeholder="amount" style="flex:1;margin-top:0;">
+        <button id="resetDoseBtn" style="display:none;margin:0;padding:10px 12px;font-size:14px;background:#555;white-space:nowrap;">↺ Auto</button>
+      </div>
+
+      <label>Route</label>
+      <select id="f_route">
+        ${["Oral","SQ","IM","Topical","IV"].map(r=>`<option${r===(activeFormula.route||lastRoute)?" selected":""}>${r}</option>`).join("")}
+      </select>
+
+      <label>Notes</label>
+      <input id="f_mednotes" placeholder="Optional notes">
+
+      <label>Schedule Follow-up / Redose</label>
+      <select id="f_followup">
+        <option value="">None</option>
+        <option value="7">In 1 week</option>
+        <option value="14">In 2 weeks</option>
+        <option value="21">In 3 weeks</option>
+        <option value="30">In 1 month</option>
+        <option value="custom">Custom date</option>
+      </select>
+      <input id="f_followup_date" type="date" style="display:none;margin-top:6px;">
+      <input id="f_followup_note" placeholder="Follow-up note (optional)" style="margin-top:6px;">
+    `;
+
+    if (isFixed && document.getElementById("weightRow")) {
+      document.getElementById("weightRow").style.display = "none";
+    }
+
+    document.getElementById("f_med").onchange = () => {
+      calcDose();
+      // Update route to match per-med default
+      const selectedMed = document.getElementById("f_med").value;
+      const medRoute = formulas[selectedMed]?.route || lastRoute;
+      document.getElementById("f_route").value = medRoute;
+    };
+    document.getElementById("f_medweight").oninput = calcDose;
+    document.getElementById("f_followup").onchange = () => {
+      const v = document.getElementById("f_followup").value;
+      document.getElementById("f_followup_date").style.display = v === "custom" ? "block" : "none";
+    };
+
+    let doseManual = false;
+    document.getElementById("f_dose").oninput = () => {
+      doseManual = true;
+      const u = formulas[document.getElementById("f_med").value]?.unit || "ml";
+      document.getElementById("doseDisplay").textContent =
+        document.getElementById("f_dose").value + " " + u + " (manual)";
+      document.getElementById("resetDoseBtn").style.display = "inline-block";
+    };
+    document.getElementById("resetDoseBtn").onclick = () => {
+      doseManual = false;
+      document.getElementById("resetDoseBtn").style.display = "none";
+      calcDose();
+    };
+
+    // Use onkeydown (not addEventListener) so it never stacks across animals
+    document.getElementById("f_med").onkeydown = e => {
+      if (renderLock) { e.preventDefault(); return; }
+      if (e.key === "Enter") { e.preventDefault(); nextAction(); }
+      if (e.key === "Tab")   { e.preventDefault(); document.getElementById("f_dose").focus(); document.getElementById("f_dose").select(); }
+    };
+  }
+
+  if (t === "hoof") {
+    box.innerHTML = `
+      <label>Condition</label>
+      <select id="f_hoof">
+        <option>Good</option>
+        <option>Trimmed</option>
+        <option>Overgrown</option>
+        <option>Rot</option>
+        <option>Crack</option>
+        <option>Injury</option>
+      </select>
+      <label>Notes</label>
+      <input id="f_hoofnotes" placeholder="Optional notes">
+
+      <label>Schedule Follow-up</label>
+      <select id="f_followup">
+        <option value="">None</option>
+        <option value="7">In 1 week</option>
+        <option value="14">In 2 weeks</option>
+        <option value="30">In 1 month</option>
+        <option value="60">In 2 months</option>
+        <option value="custom">Custom date</option>
+      </select>
+      <input id="f_followup_date" type="date" style="display:none;margin-top:6px;">
+      <input id="f_followup_note" placeholder="Follow-up note (optional)" style="margin-top:6px;">
+    `;
+    document.getElementById("f_hoof").onchange = () => {
+      const v = document.getElementById("f_hoof").value;
+      const el = document.getElementById("f_hoof");
+      el.className = (v==="Rot"||v==="Injury") ? "bad" : (v==="Overgrown"||v==="Crack") ? "warn" : "good";
+    };
+    document.getElementById("f_followup").onchange = () => {
+      const v = document.getElementById("f_followup").value;
+      document.getElementById("f_followup_date").style.display = v === "custom" ? "block" : "none";
+    };
+  }
+
+  if (t === "obs") {
+    box.innerHTML = `
+      <label>Observation</label>
+      <textarea id="f_obs" rows="3" placeholder="Describe what you observed"></textarea>
+
+      <label>Severity</label>
+      <select id="f_sev">
+        <option>Low</option>
+        <option>Moderate</option>
+        <option>High</option>
+        <option>Urgent</option>
+      </select>
+
+      <label>Schedule Follow-up</label>
+      <select id="f_followup">
+        <option value="">None</option>
+        <option value="3">In 3 days</option>
+        <option value="7">In 1 week</option>
+        <option value="14">In 2 weeks</option>
+        <option value="30">In 1 month</option>
+        <option value="custom">Custom date</option>
+      </select>
+      <input id="f_followup_date" type="date" style="display:none;margin-top:6px;">
+      <input id="f_followup_note" placeholder="Follow-up note (optional)" style="margin-top:6px;">
+    `;
+    document.getElementById("f_sev").onchange = () => {
+      const v = document.getElementById("f_sev").value;
+      document.getElementById("f_sev").className =
+        (v==="Urgent"||v==="High") ? "bad" : v==="Moderate" ? "warn" : "good";
+    };
+    document.getElementById("f_followup").onchange = () => {
+      const v = document.getElementById("f_followup").value;
+      document.getElementById("f_followup_date").style.display = v === "custom" ? "block" : "none";
+    };
+  }
+
+  if (t === "birth") {
+    box.innerHTML = `
+      <label>Kids (comma separated)</label>
+      <input id="f_kids" placeholder="e.g. Daisy, Duke">
+
+      <label>Dam (mother)</label>
+      <select id="f_dam">
+        ${goats.map(g => `<option>${g}</option>`).join("")}
+      </select>
+
+      <label>Birth type</label>
+      <select id="f_birthtype">
+        <option>Natural</option>
+        <option>Assisted</option>
+        <option>C-section</option>
+      </select>
+
+      <label>Notes</label>
+      <textarea id="f_birthnotes" rows="2" placeholder="Optional notes"></textarea>
+    `;
+  }
+
+  if (t === "activity") {
+    // Build list of previously used activity titles for autocomplete
+    const prevTitles = [...new Set(
+      logs.filter(l => l.type === "activity" && l.data.title)
+          .map(l => l.data.title)
+    )];
+
+    box.innerHTML = `
+      <label>Title</label>
+      <input id="f_actitle" list="activityTitles" placeholder="What activity?">
+      <datalist id="activityTitles">
+        ${prevTitles.map(t => `<option value="${t}">`).join("")}
+      </datalist>
+
+      <label>Description</label>
+      <textarea id="f_acdesc" rows="4" placeholder="Details..."></textarea>
+    `;
+  }
+
+  // Focus first input
+  // Lock Enter briefly so stale keypress from previous step doesn't fire on the new one
+  renderLock = true;
+  setTimeout(() => {
+    const el = box.querySelector("input, select, textarea");
+    if (el) { el.focus(); if (el.select && el.type !== "number") el.select(); }
+    renderLock = false;
+  }, 120);
+}
+
+function calcDose() {
+  const med = document.getElementById("f_med")?.value;
+  const w = parseFloat(document.getElementById("f_medweight")?.value) || 0;
+  const f = formulas[med];
+  if (!f) return;
+
+  const unit = f.unit || "ml";
+  const displayEl = document.getElementById("doseDisplay");
+  const doseEl = document.getElementById("f_dose");
+  const weightRow = document.getElementById("weightRow");
+
+  if (f.fixed) {
+    // Fixed dose — hide weight row, use fixed dose value directly
+    if (weightRow) weightRow.style.display = "none";
+    if (doseEl) doseEl.value = f.dose;
+    if (displayEl) displayEl.textContent = f.dose + " " + unit;
+  } else {
+    // Weight-based dose
+    if (weightRow) weightRow.style.display = "";
+    if (w) {
+      let d = w * f.dose;
+      const r = f.round || "none";
+      if (r !== "none") {
+        const rv = parseFloat(r);
+        if (!isNaN(rv) && rv > 0) d = Math.floor(d / rv) * rv;
+      }
+      const display = d.toFixed(2);
+      if (doseEl) doseEl.value = display;
+      if (displayEl) displayEl.textContent = display + " " + unit;
+    } else {
+      if (displayEl) displayEl.textContent = "enter weight";
+    }
+  }
+}
+
+function updateVitalColors() {
+  const temp = parseFloat(document.getElementById("f_temp")?.value);
+  const te = document.getElementById("f_temp");
+  if (te && !isNaN(temp)) {
+    te.className = (temp < 101 || temp > 104) ? "bad" : (temp > 103.5) ? "warn" : "good";
+  }
+
+  const hr = parseFloat(document.getElementById("f_hr")?.value);
+  const hre = document.getElementById("f_hr");
+  if (hre && !isNaN(hr)) {
+    hre.className = (hr < 60 || hr > 100) ? "bad" : (hr < 70 || hr > 90) ? "warn" : "good";
+  }
+
+  const resp = parseFloat(document.getElementById("f_resp")?.value);
+  const re = document.getElementById("f_resp");
+  if (re && !isNaN(resp)) {
+    re.className = (resp < 10 || resp > 30) ? "bad" : (resp < 12 || resp > 20) ? "warn" : "good";
+  }
+
+  const rumen = parseFloat(document.getElementById("f_rumen")?.value);
+  const rue = document.getElementById("f_rumen");
+  if (rue && !isNaN(rumen)) {
+    rue.className = (rumen < 1 || rumen > 3) ? "bad" : rumen < 1.5 ? "warn" : "good";
+  }
+
+  const f = document.getElementById("f_famacha")?.value;
+  const fe = document.getElementById("f_famacha");
+  if (fe && f && f !== "") {
+    fe.className = (f==="4"||f==="5") ? "bad" : f==="3" ? "warn" : "good";
+  }
+}
+
+// ===== ENTER KEY =====
+let renderLock = false;
+
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  const active = document.querySelector("#screen-entry.active");
+  if (!active) return;
+  if (renderLock) { e.preventDefault(); return; }
+  // f_med handles its own Enter
+  if (document.activeElement.id === "f_med") return;
+
+  e.preventDefault();
+
+  const inputs = [...document.querySelectorAll("#inputs input, #inputs select, #inputs textarea")];
+  const i = inputs.indexOf(document.activeElement);
+
+  if (i >= 0 && i < inputs.length - 1) {
+    inputs[i + 1].focus();
+  } else {
+    nextAction();
+  }
+});
+
+// ===== FOLLOW-UP TASK =====
+function saveFollowup(g, t, baseData) {
+  const followupEl = document.getElementById("f_followup");
+  if (!followupEl || !followupEl.value) return;
+
+  const days = followupEl.value === "custom"
+    ? null
+    : parseInt(followupEl.value);
+
+  let followupDate;
+  if (followupEl.value === "custom") {
+    const dateEl = document.getElementById("f_followup_date");
+    if (!dateEl || !dateEl.value) return;
+    followupDate = new Date(dateEl.value).toISOString();
+  } else {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    followupDate = d.toISOString();
+  }
+
+  const noteEl = document.getElementById("f_followup_note");
+  const note = noteEl?.value || "";
+
+  const task = {
+    id: Date.now() + "fu" + Math.random().toString(36).slice(2),
+    goat: g,
+    type: t,
+    time: followupDate,
+    data: { ...baseData, notes: note || ("Follow-up: " + (baseData.med || baseData.state || t)) },
+    synced: false,
+    loggedBy: JSON.parse(localStorage.getItem("farmosCfg") || "{}").user || "",
+    status: "pending"
+  };
+
+  logs.push(task);
+  localStorage.setItem("logs", JSON.stringify(logs));
+}
+
+// ===== SAVE =====
+function saveStep() {
+  const g = document.getElementById("goat").value;
+  const t = flow[step];
+  const ts = getTimestamp();
+
+  const cfg = JSON.parse(localStorage.getItem("farmosCfg") || "{}");
+  const entry = { id: Date.now() + Math.random().toString(36).slice(2), goat: g, type: t, time: ts, data: {}, synced: false, loggedBy: cfg.user || "" };
+
+  if (t === "weight") {
+    const wEl = document.getElementById("f_weight");
+    const w = parseFloat(wEl?.dataset.parsed || wEl?.value);
+    if (isNaN(w)) return false;
+    entry.data.weight = w;
+    weights[g] = w;
+    localStorage.setItem("weights", JSON.stringify(weights));
+  }
+
+  if (t === "vitals") {
+    entry.data = {
+      temp:    parseFloat(document.getElementById("f_temp")?.value)  || null,
+      hr:      parseFloat(document.getElementById("f_hr")?.value)    || null,
+      resp:    parseFloat(document.getElementById("f_resp")?.value)  || null,
+      rumen:   parseFloat(document.getElementById("f_rumen")?.value) || null,
+      famacha: document.getElementById("f_famacha")?.value || null,
+      notes:   document.getElementById("f_vnotes")?.value || ""
+    };
+  }
+
+  if (t === "med") {
+    const medName = document.getElementById("f_med")?.value || "";
+    entry.data = {
+      med:    medName,
+      dose:   parseFloat(document.getElementById("f_dose")?.value)  || 0,
+      unit:   formulas[medName]?.unit || "ml",
+      route:  document.getElementById("f_route")?.value || "Oral",
+      weight: parseFloat(document.getElementById("f_medweight")?.value) || 0,
+      notes:  document.getElementById("f_mednotes")?.value || ""
+    };
+    lastMed   = entry.data.med;
+    lastRoute = entry.data.route;
+    localStorage.setItem("lastMed",   lastMed);
+    localStorage.setItem("lastRoute", lastRoute);
+    saveFollowup(g, "med", { med: entry.data.med, dose: entry.data.dose, unit: entry.data.unit, route: entry.data.route });
+  }
+
+  if (t === "hoof") {
+    entry.data = {
+      state: document.getElementById("f_hoof")?.value || "Good",
+      notes: document.getElementById("f_hoofnotes")?.value || ""
+    };
+    saveFollowup(g, "hoof", { state: entry.data.state });
+  }
+
+  if (t === "obs") {
+    entry.data = {
+      note: document.getElementById("f_obs")?.value || "",
+      sev:  document.getElementById("f_sev")?.value || "Low"
+    };
+    saveFollowup(g, "obs", { note: entry.data.note, sev: entry.data.sev });
+  }
+
+  if (t === "birth") {
+    entry.data = {
+      kids:  document.getElementById("f_kids")?.value || "",
+      dam:   document.getElementById("f_dam")?.value || "",
+      type:  document.getElementById("f_birthtype")?.value || "Natural",
+      notes: document.getElementById("f_birthnotes")?.value || ""
+    };
+  }
+
+  if (t === "activity") {
+    entry.data = {
+      title: document.getElementById("f_actitle")?.value || "",
+      desc:  document.getElementById("f_acdesc")?.value  || ""
+    };
+  }
+
+  logs.push(entry);
+  localStorage.setItem("logs", JSON.stringify(logs));
+  return true;
+}
+
+function nextAction() {
+  if (!saveStep()) return;
+
+  step++;
+  if (step >= flow.length) {
+    if (!document.getElementById("stay").checked) {
+      herdIndex++;
+      if (herdIndex >= goats.length) {
+        show("home");
+        return;
+      }
+      document.getElementById("goat").selectedIndex = herdIndex;
+    }
+    step = 0;
+  }
+  renderStep();
+}
+
+// ===== FORMAT =====
+function formatLog(l) {
+  if (!l || !l.data) return "no data";
+  let out = "";
+  if (l.type === "weight") out = (l.data.weight || "?") + " lbs";
+  else if (l.type === "vitals") {
+    let parts = [];
+    if (l.data.temp)    parts.push("T:" + l.data.temp);
+    if (l.data.hr)      parts.push("HR:" + l.data.hr);
+    if (l.data.resp)    parts.push("R:" + l.data.resp);
+    if (l.data.rumen)   parts.push("Ru:" + l.data.rumen);
+    if (l.data.famacha) parts.push("FAMACHA:" + l.data.famacha);
+    out = parts.join("  ") || "vitals recorded";
+  }
+  else if (l.type === "med")  out = (l.data.med || "") + " " + (l.data.dose || "") + " " + (l.data.unit || "ml") + " via " + (l.data.route || "");
+  else if (l.type === "hoof") out = (l.data.state || "?");
+  else if (l.type === "obs")  out = (l.data.note || "") + (l.data.sev ? " (" + l.data.sev + ")" : "");
+  else if (l.type === "birth") out = "Kids: " + (l.data.kids || "?") + " — Dam: " + (l.data.dam || "");
+  else if (l.type === "activity") out = (l.data.title || "") + (l.data.desc ? " — " + l.data.desc : "");
+  else out = JSON.stringify(l.data);
+  // Append notes only if present and not a duplicate of the main output
+  const notes = (l.data.notes || "").trim();
+  if (notes && l.type !== "obs" && l.type !== "activity" && notes !== out && !out.includes(notes)) {
+    out += " — " + notes;
+  }
+  return out;
+}
+
+function logColor(l) {
+  if (!l || !l.data) return "";
+  if (l.type === "vitals") {
+    const f = parseInt(l.data.famacha);
+    if (f >= 4) return "bad";
+    if (f === 3) return "warn";
+    const t = parseFloat(l.data.temp);
+    if (t && (t < 101 || t > 104)) return "bad";
+    return "good";
+  }
+  if (l.type === "hoof") {
+    if (l.data.state === "Rot" || l.data.state === "Injury") return "bad";
+    if (l.data.state === "Overgrown" || l.data.state === "Crack") return "warn";
+    return "good";
+  }
+  if (l.type === "obs") {
+    if (l.data.sev === "Urgent" || l.data.sev === "High") return "bad";
+    if (l.data.sev === "Moderate") return "warn";
+    return "good";
+  }
+  return "";
+}
+
+function makeLogEl(l, showActions = false) {
+  const d = document.createElement("div");
+  d.className = "log " + logColor(l);
+  d.dataset.logId = l.id;
+  const t = l.time ? (new Date(l.time).toString() !== "Invalid Date" ? new Date(l.time).toLocaleString() : "unknown time") : "unknown time";
+  d.innerHTML = `
+    <div class="log-top">
+      ${showActions ? `<input type="checkbox" class="log-select" data-id="${l.id}" style="width:auto;margin:0 8px 0 0;">` : ""}
+      <span class="log-animal">${l.goat}</span>
+      <span class="log-type">${l.type}</span>
+    </div>
+    <div class="log-detail">${formatLog(l)}</div>
+    <div class="log-time">${t}${l.loggedBy ? ' · ' + l.loggedBy : ''}${l.status === 'pending' ? ' ⏰ scheduled' : (l.synced ? ' ✓ synced' : '')}</div>
+  `;
+  if (showActions) {
+    const actions = document.createElement("div");
+    actions.style.cssText = "display:flex;gap:6px;margin-top:6px;";
+    if (l.status === "pending") {
+      const completeBtn = document.createElement("button");
+      completeBtn.textContent = "✅ Complete";
+      completeBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#1b4d1e;";
+      completeBtn.onclick = () => completeTask(l.id);
+      actions.appendChild(completeBtn);
+    }
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "✏️ Edit";
+    editBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;";
+    editBtn.onclick = () => openEdit(l.id);
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "🗑️ Delete";
+    delBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#8b0000;";
+    delBtn.onclick = () => deleteLog(l.id);
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+    d.appendChild(actions);
+  }
+  return d;
+}
+
+// ===== PENDING TASKS =====
+function renderPending() {
+  const pending = logs.filter(l => l.status === "pending")
+    .sort((a,b) => timeVal(a) - timeVal(b));
+  const box = document.getElementById("pendingBox");
+  const list = document.getElementById("pendingList");
+  if (!pending.length) { box.style.display = "none"; return; }
+  box.style.display = "block";
+  list.innerHTML = "";
+  pending.forEach(l => list.appendChild(makeLogEl(l, true)));
+}
+
+function completeTask(id) {
+  const l = logs.find(l => l.id === id);
+  if (!l) return;
+  l.status = "done";
+  l.time = new Date().toISOString();
+  l.synced = false;
+  localStorage.setItem("logs", JSON.stringify(logs));
+  renderPending();
+  renderRecent();
+  renderHistory();
+}
+
+// ===== RECENT =====
+function timeVal(l) {
+  if (!l.time) return 0;
+  const v = new Date(l.time).getTime();
+  return isNaN(v) ? 0 : v;
+}
+
+function renderRecent() {
+  const box = document.getElementById("recent");
+  box.innerHTML = "";
+  // Exclude pending tasks from recent — they show in Scheduled Tasks section
+  const active = logs.filter(l => l.status !== "pending");
+  if (!active.length) { box.innerHTML = "<div style='color:#666;padding:8px;'>No logs yet</div>"; return; }
+  active.slice().sort((a,b) => timeVal(b) - timeVal(a))
+    .slice(0, 15)
+    .forEach(l => box.appendChild(makeLogEl(l)));
+  renderPending();
+}
+
+// ===== HISTORY =====
+const SEV_RANK = { "Urgent":4, "High":3, "Moderate":2, "Low":1, "":0 };
+
+function logSevRank(l) {
+  if (l.type === "obs") return SEV_RANK[l.data.sev] || 0;
+  if (l.type === "vitals") {
+    const f = parseInt(l.data.famacha);
+    if (f >= 4) return 4;
+    if (f === 3) return 3;
+    const t = parseFloat(l.data.temp);
+    if (t && (t < 101 || t > 104)) return 3;
+    return 1;
+  }
+  if (l.type === "hoof") {
+    if (l.data.state === "Rot" || l.data.state === "Injury") return 4;
+    if (l.data.state === "Overgrown" || l.data.state === "Crack") return 2;
+    return 1;
+  }
+  return 0;
+}
+
+function renderHistory() {
+  const gf = document.getElementById("filterGoat").value;
+  const tf = document.getElementById("filterType").value;
+  const sf = document.getElementById("sortOrder").value;
+
+  let filtered = logs.filter(l =>
+    (!gf || l.goat === gf) && (!tf || l.type === tf)
+  );
+
+  if (sf === "desc") filtered.sort((a,b) => timeVal(b) - timeVal(a));
+  else if (sf === "asc")  filtered.sort((a,b) => timeVal(a) - timeVal(b));
+  else if (sf === "sev_desc") filtered.sort((a,b) => logSevRank(b) - logSevRank(a));
+  else if (sf === "sev_asc")  filtered.sort((a,b) => logSevRank(a) - logSevRank(b));
+  else if (sf === "pending")  filtered.sort((a,b) => {
+    if (a.status === "pending" && b.status !== "pending") return -1;
+    if (b.status === "pending" && a.status !== "pending") return 1;
+    return timeVal(a) - timeVal(b);
+  });
+
+  const box = document.getElementById("historyLogs");
+  box.innerHTML = "";
+  if (!filtered.length) {
+    box.innerHTML = "<div class='box' style='color:#666;'>No entries match.</div>";
+    return;
+  }
+  filtered.forEach(l => box.appendChild(makeLogEl(l, true)));
+}
+
+document.getElementById("filterGoat").onchange = renderHistory;
+document.getElementById("filterType").onchange = renderHistory;
+document.getElementById("sortOrder").onchange = renderHistory;
+
+// ===== SETTINGS =====
+function renderSettings() {
+  // Formulas table
+  const tbody = document.getElementById("formulaRows");
+  tbody.innerHTML = "";
+  Object.entries(formulas).forEach(([name, val]) => {
+    const tr = document.createElement("tr");
+    const roundVal = val.round || "none";
+    const unitVal  = val.unit  || "ml";
+    const fixedVal = val.fixed || false;
+    const routeVal = val.route || "Oral";
+
+    const tdName = document.createElement("td");
+    tdName.style.fontSize = "15px";
+    tdName.textContent = name;
+
+    const tdDose = document.createElement("td");
+    const doseInput = document.createElement("input");
+    doseInput.type = "number"; doseInput.step = "0.001";
+    doseInput.value = val.dose;
+    doseInput.setAttribute("data-med", name);
+    doseInput.setAttribute("data-field", "dose");
+    doseInput.style.cssText = "width:70px;padding:6px;font-size:14px;";
+    tdDose.appendChild(doseInput);
+
+    // Unit — typeable datalist
+    const tdUnit = document.createElement("td");
+    const unitInput = document.createElement("input");
+    unitInput.setAttribute("list", "unitOptions");
+    unitInput.value = unitVal;
+    unitInput.setAttribute("data-med", name);
+    unitInput.setAttribute("data-field", "unit");
+    unitInput.style.cssText = "width:80px;padding:6px;font-size:14px;";
+    tdUnit.appendChild(unitInput);
+
+    // Route per med
+    const tdRoute = document.createElement("td");
+    const routeSel = document.createElement("select");
+    routeSel.setAttribute("data-med", name);
+    routeSel.setAttribute("data-field", "route");
+    routeSel.style.cssText = "padding:6px;font-size:14px;";
+    ["Oral","SQ","IM","Topical","IV"].forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r; opt.textContent = r;
+      if (r === routeVal) opt.selected = true;
+      routeSel.appendChild(opt);
+    });
+    tdRoute.appendChild(routeSel);
+
+    const tdRound = document.createElement("td");
+    const roundSel = document.createElement("select");
+    roundSel.setAttribute("data-med", name);
+    roundSel.setAttribute("data-field", "round");
+    roundSel.style.cssText = "padding:6px;font-size:14px;";
+    [["none","Exact"],["0.1","0.1"],["0.25","0.25"],["0.5","0.5"],["1","1"]].forEach(([v, label]) => {
+      const opt = document.createElement("option");
+      opt.value = v; opt.textContent = label;
+      if (v === roundVal) opt.selected = true;
+      roundSel.appendChild(opt);
+    });
+    tdRound.appendChild(roundSel);
+
+    // Fixed dose checkbox
+    const tdFixed = document.createElement("td");
+    tdFixed.style.textAlign = "center";
+    const fixedChk = document.createElement("input");
+    fixedChk.type = "checkbox";
+    fixedChk.checked = fixedVal;
+    fixedChk.setAttribute("data-med", name);
+    fixedChk.setAttribute("data-field", "fixed");
+    fixedChk.style.cssText = "width:auto;margin:0;transform:scale(1.4);";
+    tdFixed.appendChild(fixedChk);
+
+    const tdDel = document.createElement("td");
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "✕";
+    delBtn.style.cssText = "padding:6px 10px;font-size:13px;background:#8b0000;margin:0;";
+    delBtn.onclick = () => deleteFormula(name);
+    tdDel.appendChild(delBtn);
+
+    tr.appendChild(tdName); tr.appendChild(tdDose);
+    tr.appendChild(tdUnit); tr.appendChild(tdRoute);
+    tr.appendChild(tdRound); tr.appendChild(tdFixed);
+    tr.appendChild(tdDel);
+    tbody.appendChild(tr);
+  });
+
+  // Excluded animals list
+  const el2 = document.getElementById("excludedList");
+  if (excludedAnimals.length > 0) {
+    el2.innerHTML = "<div style='color:#888;font-size:13px;margin-top:10px;'>Excluded from Fetch:</div>";
+    excludedAnimals.forEach(name => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:4px;padding:6px 8px;border-radius:6px;background:#333;";
+      const n = document.createElement("span");
+      n.style.cssText = "flex:1;color:#888;";
+      n.textContent = name;
+      const btn = document.createElement("button");
+      btn.textContent = "↩ Restore";
+      btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
+      btn.onclick = () => restoreAnimal(name);
+      row.appendChild(n);
+      row.appendChild(btn);
+      el2.appendChild(row);
+    });
+  } else {
+    el2.innerHTML = "";
+  }
+
+  // Animal list
+  const al = document.getElementById("animalList");
+  al.innerHTML = "";
+  goats.forEach((g, i) => {
+    const row = document.createElement("div");
+    row.style.cssText = `display:flex;align-items:center;gap:6px;margin-bottom:2px;padding:6px 8px;border-radius:6px;background:${i % 2 === 0 ? "#2a2a2a" : "#333"};`;
+    const name = document.createElement("span");
+    name.style.flex = "1";
+    name.textContent = g;
+    const btn = document.createElement("button");
+    btn.textContent = "✕";
+    btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
+    btn.onclick = () => removeAnimal(g);
+    row.appendChild(name);
+    row.appendChild(btn);
+    al.appendChild(row);
+  });
+}
+
+function saveFormulas() {
+  document.querySelectorAll("#formulaRows [data-med][data-field='dose']").forEach(inp => {
+    const med = inp.getAttribute("data-med");
+    const val = parseFloat(inp.value);
+    if (!isNaN(val) && formulas[med]) formulas[med].dose = val;
+  });
+  document.querySelectorAll("#formulaRows [data-med][data-field='unit']").forEach(inp => {
+    const med = inp.getAttribute("data-med");
+    if (formulas[med]) formulas[med].unit = inp.value.trim() || "ml";
+  });
+  document.querySelectorAll("#formulaRows [data-med][data-field='route']").forEach(sel => {
+    const med = sel.getAttribute("data-med");
+    if (formulas[med]) formulas[med].route = sel.value;
+  });
+  document.querySelectorAll("#formulaRows [data-med][data-field='round']").forEach(sel => {
+    const med = sel.getAttribute("data-med");
+    if (formulas[med]) formulas[med].round = sel.value;
+  });
+  document.querySelectorAll("#formulaRows [data-med][data-field='fixed']").forEach(chk => {
+    const med = chk.getAttribute("data-med");
+    if (formulas[med]) formulas[med].fixed = chk.checked;
+  });
+  localStorage.setItem("formulas", JSON.stringify(formulas));
+  const btn = document.querySelector("#screen-settings button[onclick='saveFormulas()']");
+  if (btn) { const orig = btn.textContent; btn.textContent = "✅ Saved"; setTimeout(() => btn.textContent = orig, 1500); }
+}
+
+function addFormula() {
+  const name = document.getElementById("newMedName").value.trim();
+  const dose = parseFloat(document.getElementById("newMedDose").value);
+  if (!name || isNaN(dose)) return;
+  formulas[name] = { dose, unit: "ml", route: "Oral", round: "none", fixed: false };
+  document.getElementById("newMedName").value = "";
+  document.getElementById("newMedDose").value = "";
+  localStorage.setItem("formulas", JSON.stringify(formulas));
+  renderSettings();
+}
+
+function deleteFormula(name) {
+  delete formulas[name];
+  localStorage.setItem("formulas", JSON.stringify(formulas));
+  renderSettings();
+}
+
+function addAnimal() {
+  const name = document.getElementById("newAnimalName").value.trim();
+  if (!name || goats.includes(name)) return;
+  goats.push(name);
+  document.getElementById("newAnimalName").value = "";
+  localStorage.setItem("goats", JSON.stringify(goats));
+  renderSettings();
+}
+
+function restoreAnimal(name) {
+  excludedAnimals = excludedAnimals.filter(n => n !== name);
+  localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
+  if (!goats.includes(name)) {
+    goats.push(name);
+    goats.sort();
+    localStorage.setItem("goats", JSON.stringify(goats));
+  }
+  renderSettings();
+}
+
+function removeAnimal(name) {
+  goats = goats.filter(g => g !== name);
+  // Add to exclusion list so Fetch Animals never re-adds it
+  if (!excludedAnimals.includes(name)) {
+    excludedAnimals.push(name);
+    localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
+  }
+  localStorage.setItem("goats", JSON.stringify(goats));
+  renderSettings();
+}
+
+function exportLogs() {
+  const data = JSON.stringify(logs, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "goatdesk_logs_" + new Date().toISOString().slice(0,10) + ".json";
+  a.click();
+}
+
+function importLogs(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!Array.isArray(imported)) throw new Error("Not a valid logs file");
+      // Merge — skip any entries whose ID already exists
+      const existingIds = new Set(logs.map(l => l.id));
+      let added = 0;
+      imported.forEach(l => {
+        if (!l.id) l.id = Date.now() + Math.random().toString(36).slice(2);
+        if (!existingIds.has(l.id)) { logs.push(l); added++; }
+      });
+      localStorage.setItem("logs", JSON.stringify(logs));
+      document.getElementById("importResult").textContent = `✅ Imported ${added} logs (${imported.length - added} duplicates skipped)`;
+      document.getElementById("importResult").style.color = "#3a7";
+      renderRecent();
+    } catch(err) {
+      document.getElementById("importResult").textContent = "❌ Import failed: " + err.message;
+      document.getElementById("importResult").style.color = "#c00";
+    }
+    input.value = "";
+  };
+  reader.readAsText(file);
+}
+
+function clearLogs() {
+  const modal  = document.getElementById("editModal");
+  const fields = document.getElementById("editFields");
+  const saveBtn = document.getElementById("modalSaveBtn");
+  document.getElementById("editTitle").textContent = "Clear ALL logs?";
+  fields.innerHTML = `<p style="color:#c66;">Every log entry will be deleted. This cannot be undone.</p>`;
+  saveBtn.textContent = "🗑️ Confirm Clear All";
+  saveBtn.style.background = "#8b0000";
+  saveBtn.onclick = () => {
+    logs = [];
+    localStorage.setItem("logs", JSON.stringify(logs));
+    saveBtn.textContent = "💾 Save";
+    saveBtn.style.background = "";
+    saveBtn.onclick = saveEdit;
+    closeEdit();
+    renderSettings();
+  };
+  modal.style.display = "block";
+}
+
+// ===== FARMOS SYNC =====
+
+// farmOS log type mapping — matches your existing records
+const FARMOS_TYPE_MAP = {
+  weight:   "observation",
+  vitals:   "observation",
+  obs:      "observation",
+  med:      "medical",
+  hoof:     "maintenance",
+  birth:    "birth",
+  activity: "activity"
+};
+
+// Generates log name in the standard format already used in your farmOS records
+function farmosLogName(l) {
+  if (l.type === "weight")  return `Weight of ${l.goat} is ${l.data.weight} lbs`;
+  if (l.type === "vitals")  return `Vitals: ${l.goat}`;
+  if (l.type === "med")     return `Administer ${l.data.med}`;
+  if (l.type === "hoof")    return `Hoof trimming`;
+  if (l.type === "obs")     return l.data.note ? l.data.note.slice(0, 60) : `Observation: ${l.goat}`;
+  if (l.type === "birth")   return `Birth: ${l.data.kids || "unknown"}`;
+  if (l.type === "activity") return l.data.title || "Activity";
+  return l.goat + " — " + l.type;
+}
+
+// Animal UUID cache — populated by fetchAnimalUUIDs()
+let animalUUIDs = JSON.parse(localStorage.getItem("animalUUIDs") || "{}");
+
+function togglePass() {
+  const p = document.getElementById("farmosPass");
+  const btn = document.getElementById("showPassBtn");
+  if (p.type === "password") {
+    p.type = "text";
+    btn.textContent = "🙈";
+  } else {
+    p.type = "password";
+    btn.textContent = "👁";
+  }
+}
+
+function renderSync() {
+  const cfg = JSON.parse(localStorage.getItem("farmosCfg") || "{}");
+  if (cfg.url)  document.getElementById("farmosUrl").value  = cfg.url;
+  if (cfg.user) document.getElementById("farmosUser").value = cfg.user;
+  if (cfg.pass) document.getElementById("farmosPass").value = cfg.pass;
+  const unsynced = logs.filter(l => !l.synced).length;
+  document.getElementById("unsyncedCount").textContent = unsynced;
+  document.getElementById("syncLog").textContent = "";
+}
+
+function saveFarmOSCfg() {
+  const cfg = {
+    url:  document.getElementById("farmosUrl").value.trim().replace(/\/$/, ""),
+    user: document.getElementById("farmosUser").value.trim(),
+    pass: document.getElementById("farmosPass").value
+  };
+  localStorage.setItem("farmosCfg", JSON.stringify(cfg));
+  return cfg;
+}
+
+// OAuth2 — tries local proxy first, falls back to direct farmOS if proxy unreachable
+async function getToken(cfg) {
+  const body = new URLSearchParams({
+    grant_type: "password",
+    client_id:  "farm",
+    username:   cfg.user,
+    password:   cfg.pass,
+    scope:      "farm_manager"
+  });
+
+  // Try proxy first
+  try {
+    const res = await fetch("/proxy/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    });
+    if (res.ok) {
+      const data = await res.json();
+      window._useProxy = true;
+      return data.access_token;
+    }
+  } catch(e) { /* proxy not available, try direct */ }
+
+  // Fall back to direct farmOS (works when Pi not reachable but internet available)
+  const res = await fetch(cfg.url + "/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error("Auth failed (" + res.status + "): " + txt.slice(0, 100));
+  }
+  window._useProxy = false;
+  const data = await res.json();
+  return data.access_token;
+}
+
+function apiUrl(path) {
+  return window._useProxy ? "/proxy" + path : (JSON.parse(localStorage.getItem("farmosCfg") || "{}").url || "") + path;
+}
+
+async function testFarmOS() {
+  const cfg = saveFarmOSCfg();
+  const el = document.getElementById("farmosTestResult");
+  el.style.color = "#888";
+  el.textContent = "Connecting...";
+  try {
+    const token = await getToken(cfg);
+    const res = await fetch(apiUrl("/api"), {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    if (res.ok) {
+      let farmName = cfg.url;
+      try {
+        const data = await res.json();
+        farmName = data?.meta?.farm?.name || cfg.url;
+      } catch(e) { /* use url as fallback */ }
+      const via = window._useProxy ? "via proxy" : "direct";
+      el.textContent = "✅ Connected to: " + farmName + " (" + via + ")";
+      el.style.color = "#3a7";
+    } else {
+      el.textContent = "❌ API error: " + res.status;
+      el.style.color = "#c00";
+    }
+  } catch(e) {
+    el.textContent = "❌ " + e.message;
+    el.style.color = "#c00";
+  }
+}
+
+// Fetch animals + last weights + last 50 goat logs from farmOS
+async function fetchAnimalUUIDs() {
+  const cfg = saveFarmOSCfg();
+  const el = document.getElementById("farmosTestResult");
+  el.style.color = "#888";
+
+  try {
+    const token = await getToken(cfg);
+    const authHeaders = {
+      "Authorization": "Bearer " + token,
+      "Accept": "application/vnd.api+json"
+    };
+
+    // ===== STEP 1: Fetch all animals — update UUID cache only =====
+    el.textContent = "Fetching animals...";
+    const animalRes = await fetch(apiUrl("/api/asset/animal?page[limit]=100"), { headers: authHeaders });
+    if (!animalRes.ok) throw new Error("Animals fetch failed: HTTP " + animalRes.status);
+    const animalData = await animalRes.json();
+
+    animalUUIDs = {};
+    (animalData.data || []).forEach(a => {
+      // Skip archived animals
+      if (a.attributes.status === "archived") return;
+      animalUUIDs[a.attributes.name] = a.id;
+    });
+
+    localStorage.setItem("animalUUIDs", JSON.stringify(animalUUIDs));
+
+    // Goat list is managed in Settings — Fetch Animals never overwrites it
+    // It only updates the UUID cache so logs link to the right animals in farmOS
+
+    // ===== STEP 2: Fetch last 50 goat-related logs from farmOS =====
+    el.textContent = "Fetching recent logs...";
+
+    // Fetch last 50 of each log type sorted newest first
+    const logsRes = await fetch(
+      apiUrl("/api/log/activity?page[limit]=50&sort=-timestamp"),
+      { headers: authHeaders }
+    );
+
+    const [obsRes, medRes, maintRes] = await Promise.all([
+      fetch(apiUrl("/api/log/observation?page[limit]=50&sort=-timestamp"),  { headers: authHeaders }),
+      fetch(apiUrl("/api/log/medical?page[limit]=50&sort=-timestamp"),      { headers: authHeaders }),
+      fetch(apiUrl("/api/log/maintenance?page[limit]=50&sort=-timestamp"),  { headers: authHeaders })
+    ]);
+
+    const allLogs = [];
+    for (const res of [logsRes, obsRes, medRes, maintRes]) {
+      if (res.ok) {
+        const d = await res.json();
+        (d.data || []).forEach(l => allLogs.push(l));
+      }
+    }
+
+    // Try to fetch user list for ID->name mapping, may fail due to permissions
+    const userNames = {};
+    try {
+      const userRes = await fetch(apiUrl("/api/user/user?page[limit]=50"), { headers: authHeaders });
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        (userData.data || []).forEach(u => {
+          const internalId = u.attributes?.drupal_internal__uid;
+          const name = u.attributes?.display_name || u.attributes?.name || "";
+          if (internalId && name) userNames[internalId] = name;
+        });
+      }
+    } catch(e) { /* optional */ }
+
+    // If user list fetch failed, map the current user's ID using their login
+    // We do this by fetching the current user profile
+    if (Object.keys(userNames).length === 0) {
+      try {
+        const meRes = await fetch(apiUrl("/api/user/user?filter[name]=" + encodeURIComponent(cfg.user) + "&page[limit]=1"), { headers: authHeaders });
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          const me = (meData.data || [])[0];
+          if (me) {
+            const myId = me.attributes?.drupal_internal__uid;
+            if (myId) userNames[myId] = cfg.user;
+          }
+        }
+      } catch(e) { /* optional */ }
+    }
+
+    const farmosLogs = [];
+    allLogs.forEach(log => {
+        const attrs = log.attributes;
+        const assets = log.relationships?.asset?.data || [];
+
+        // Get animal names from UUID lookup (reverse lookup)
+        const linkedAnimals = assets
+          .map(a => Object.keys(animalUUIDs).find(name => animalUUIDs[name] === a.id))
+          .filter(Boolean);
+
+        // Only keep logs linked to animals in our goat list
+        const goatLinks = linkedAnimals.filter(name => goats.includes(name));
+        if (goatLinks.length === 0) return;
+
+        const logEntry = {
+          id:     log.id,
+          goat:   goatLinks[0],
+          type:   mapFarmOSTypeToLocal(log.type, attrs.name),
+          time:   (() => {
+                    // farmOS v2: timestamp is the event time (unix int string or ISO)
+                    // created is when the record was made — better fallback than now()
+                    const ts = attrs.timestamp;
+                    const cr = attrs.created || attrs.changed;
+                    // Try timestamp first
+                    if (ts) {
+                      // Could be unix integer string "1526584271" or ISO "2026-05-24T04:44:12+00:00"
+                      const asInt = Number(ts);
+                      if (!isNaN(asInt) && asInt > 1000000000) {
+                        return new Date(asInt * 1000).toISOString();
+                      }
+                      const parsed = new Date(ts);
+                      if (!isNaN(parsed.getTime())) return parsed.toISOString();
+                    }
+                    // Fall back to created time
+                    if (cr) {
+                      const asInt = Number(cr);
+                      if (!isNaN(asInt) && asInt > 1000000000) {
+                        return new Date(asInt * 1000).toISOString();
+                      }
+                      const parsed = new Date(cr);
+                      if (!isNaN(parsed.getTime())) return parsed.toISOString();
+                    }
+                    return new Date().toISOString();
+                  })(),
+          data:   parseFarmOSNotes(log.type, attrs.name, attrs.notes?.value || ""),
+          synced: true,
+          fromFarmOS: true,
+          status: attrs.status === "pending" ? "pending" : "done",
+          // Pull owner name from attributes if available, fall back to uid relationship display name
+          loggedBy: (() => {
+            const uidRel = log.relationships?.uid?.data;
+            const ownerRel = log.relationships?.owner?.data;
+            const rel = uidRel || (Array.isArray(ownerRel) ? ownerRel[0] : ownerRel);
+            if (!rel) return "";
+            const internalId = rel.meta?.drupal_internal__target_id;
+            if (internalId && userNames[internalId]) return userNames[internalId];
+            return "";
+          })()
+        };
+
+        farmosLogs.push(logEntry);
+
+        // Extract weight from weight logs and update weights cache
+        if (logEntry.type === "weight" && logEntry.data.weight) {
+          const g = logEntry.goat;
+          const existingTime = weights[g + "_time"] ? new Date(weights[g + "_time"]).getTime() : 0;
+          const newTime = new Date(logEntry.time).getTime();
+          if (!weights[g] || (!isNaN(newTime) && newTime > existingTime)) {
+            weights[g] = logEntry.data.weight;
+            weights[g + "_time"] = logEntry.time;
+          }
+        }
+      });
+
+    // Merge farmOS logs into local logs — skip any already present by farmOS id
+    const existingFarmOSIds = new Set(logs.filter(l => l.fromFarmOS).map(l => l.id));
+    let added = 0;
+    farmosLogs.forEach(l => {
+      if (!existingFarmOSIds.has(l.id)) {
+        logs.push(l);
+        added++;
+      }
+    });
+
+    localStorage.setItem("logs", JSON.stringify(logs));
+    localStorage.setItem("weights", JSON.stringify(weights));
+
+    el.textContent = `✅ UUID cache updated, ${added} logs imported, weights updated`;
+    el.style.color = "#3a7";
+
+  } catch(e) {
+    el.textContent = "❌ " + e.message;
+    el.style.color = "#c00";
+  }
+}
+
+function mapFarmOSTypeToLocal(farmosType, logName) {
+  if (farmosType === "log--observation") {
+    const n = (logName || "").trim();
+    if (n.startsWith("Weight of") || n === "Weight") return "weight";
+    if (n.startsWith("Vitals:")) return "vitals";
+    return "obs";
+  }
+  if (farmosType === "log--medical")     return "med";
+  if (farmosType === "log--maintenance") return "hoof";
+  if (farmosType === "log--birth")       return "birth";
+  if (farmosType === "log--activity")    return "activity";
+  return "obs";
+}
+
+function parseFarmOSNotes(farmosType, name, notes) {
+  const n = (name || "").trim();
+  const nt = (notes || "").trim();
+
+  // Weight logs — new format "Weight of X is Y lbs" or old format "Weight" with lbs in notes
+  if (farmosType === "log--observation") {
+    if (n.startsWith("Weight of") || n === "Weight") {
+      const m = (n + " " + nt).match(/([\d.]+)\s*[Ll]bs/);
+      if (m) return { weight: parseFloat(m[1]) };
+    }
+    if (n.startsWith("Vitals:")) {
+      return { note: nt, sev: "Low" };
+    }
+    return { note: nt || n, sev: "Low" };
+  }
+
+  // Med logs — new format "Administer MedName" or old formats
+  if (farmosType === "log--medical") {
+    let medName = "";
+    if (n.startsWith("Administer ")) {
+      medName = n.replace("Administer ", "").trim();
+    } else {
+      medName = n || "Medicine";
+    }
+    const doseMatch = nt.match(/([\d.]+)\s*ml/);
+    const routeMatch = nt.match(/via\s+(\w+)/i);
+    return {
+      med:   medName,
+      dose:  doseMatch ? parseFloat(doseMatch[1]) : 0,
+      unit:  "ml",
+      route: routeMatch ? routeMatch[1] : "Oral",
+      notes: nt
+    };
+  }
+
+  if (farmosType === "log--maintenance") {
+    return { state: nt || "Good", notes: "" };
+  }
+  if (farmosType === "log--birth") {
+    return { kids: nt, dam: "", type: "Natural", notes: nt };
+  }
+  return { note: nt || n, sev: "Low" };
+}
+
+function buildFarmOSPayload(l) {
+  const farmosType = FARMOS_TYPE_MAP[l.type] || "activity";
+  const uuid = animalUUIDs[l.goat];
+
+  const payload = {
+    data: {
+      type: "log--" + farmosType,
+      attributes: {
+        name:      farmosLogName(l),
+        timestamp: String(Math.floor((new Date(l.time).getTime() || Date.now()) / 1000)),
+        status:    l.status === "pending" ? "pending" : "done",
+        notes: {
+          value:  formatLog(l) + (l.loggedBy ? `\nLogged by: ${l.loggedBy}` : ""),
+          format: "default"
+        }
+      }
+    }
+  };
+
+  // Link to animal asset if UUID is known
+  if (uuid) {
+    payload.data.relationships = {
+      asset: {
+        data: [{ type: "asset--animal", id: uuid }]
+      }
+    };
+  }
+
+  return payload;
+}
+
+async function syncToFarmOS() {
+  const cfg = saveFarmOSCfg();
+  const logEl = document.getElementById("syncLog");
+  logEl.textContent = "Authenticating...\n";
+
+  const unsynced = logs.filter(l => !l.synced);
+  if (!unsynced.length) { logEl.textContent = "Nothing to sync."; return; }
+
+  let token;
+  try {
+    token = await getToken(cfg);
+    logEl.textContent += "✅ Token OK\n";
+  } catch(e) {
+    logEl.textContent += "❌ Auth failed: " + e.message + "\n";
+    return;
+  }
+
+  const headers = {
+    "Content-Type":  "application/vnd.api+json",
+    "Accept":        "application/vnd.api+json",
+    "Authorization": "Bearer " + token
+  };
+
+  let ok = 0, fail = 0;
+
+  for (const l of unsynced) {
+    const farmosType = FARMOS_TYPE_MAP[l.type] || "activity";
+    const payload = buildFarmOSPayload(l);
+    const url = apiUrl("/api/log/" + farmosType);
+    try {
+      const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
+      if (res.ok) {
+        l.synced = true;
+        ok++;
+        logEl.textContent += `✅ ${l.goat} | ${farmosLogName(l)}\n`;
+      } else {
+        const txt = await res.text();
+        fail++;
+        logEl.textContent += `❌ ${l.goat} ${l.type} — ${res.status}: ${txt.slice(0,80)}\n`;
+      }
+    } catch(e) {
+      fail++;
+      logEl.textContent += `❌ ${l.goat} ${l.type} — ${e.message}\n`;
+    }
+  }
+
+  localStorage.setItem("logs", JSON.stringify(logs));
+  logEl.textContent += `\nDone: ${ok} pushed, ${fail} failed.`;
+  document.getElementById("unsyncedCount").textContent = logs.filter(l => !l.synced).length;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll(".log-select").forEach(cb => cb.checked = checked);
+}
+
+function deleteSelected() {
+  const selected = [...document.querySelectorAll(".log-select:checked")].map(cb => cb.dataset.id);
+  if (!selected.length) return;
+
+  const modal  = document.getElementById("editModal");
+  const fields = document.getElementById("editFields");
+  const saveBtn = document.getElementById("modalSaveBtn");
+
+  document.getElementById("editTitle").textContent = "Delete Selected Logs?";
+  fields.innerHTML = `
+    <p style="color:#ccc;">${selected.length} log${selected.length > 1 ? "s" : ""} will be deleted.</p>
+    <p style="color:#c66;">This cannot be undone.</p>
+  `;
+
+  saveBtn.textContent = "🗑️ Confirm Delete";
+  saveBtn.style.background = "#8b0000";
+  saveBtn.onclick = () => {
+    logs = logs.filter(l => !selected.includes(l.id));
+    localStorage.setItem("logs", JSON.stringify(logs));
+    saveBtn.textContent = "💾 Save";
+    saveBtn.style.background = "";
+    saveBtn.onclick = saveEdit;
+    const sa = document.getElementById("selectAllLogs");
+    if (sa) sa.checked = false;
+    closeEdit();
+    renderHistory();
+    renderRecent();
+  };
+
+  modal.style.display = "block";
+}
+
+// Enter in edit modal saves
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  if (document.getElementById("editModal").style.display !== "block") return;
+  // Don't intercept Enter in textareas
+  if (document.activeElement.tagName === "TEXTAREA") return;
+  e.preventDefault();
+  saveEdit();
+});
+
+// ===== DELETE & EDIT =====
+let editingId = null;
+
+function deleteLog(id) {
+  const l = logs.find(l => l.id === id);
+  if (!l) return;
+
+  const modal  = document.getElementById("editModal");
+  const fields = document.getElementById("editFields");
+  const saveBtn = document.getElementById("modalSaveBtn");
+
+  document.getElementById("editTitle").textContent = "Delete this log?";
+  fields.innerHTML = `
+    <div style="padding:10px 0;color:#ccc;">
+      <strong style="color:#fff;">${l.goat}</strong> — ${l.type}<br>
+      <span style="color:#aaa;font-size:13px;">${formatLog(l)}</span><br>
+      <span style="color:#666;font-size:12px;">${l.time && !isNaN(new Date(l.time).getTime()) ? new Date(l.time).toLocaleString() : "unknown time"}</span>
+    </div>
+    <p style="color:#c66;">This cannot be undone.</p>
+  `;
+
+  saveBtn.textContent = "🗑️ Confirm Delete";
+  saveBtn.style.background = "#8b0000";
+  saveBtn.onclick = () => {
+    logs = logs.filter(x => x.id !== id);
+    localStorage.setItem("logs", JSON.stringify(logs));
+    saveBtn.textContent = "💾 Save";
+    saveBtn.style.background = "";
+    saveBtn.onclick = saveEdit;
+    closeEdit();
+    renderHistory();
+    renderRecent();
+  };
+
+  modal.style.display = "block";
+}
+
+function openEdit(id) {
+  const l = logs.find(l => l.id === id);
+  if (!l) return;
+  editingId = id;
+
+  document.getElementById("editTitle").textContent =
+    "Edit — " + l.goat + " " + (l.type);
+
+  const fields = document.getElementById("editFields");
+
+  // Time field always shown
+  const rawTime = l.time ? new Date(l.time) : new Date();
+  const localTime = (rawTime.toString() !== "Invalid Date" ? rawTime : new Date()).toISOString().slice(0,16);
+  let html = `
+    <label>Animal</label>
+    <select id="ed_goat">${goats.map(g => `<option${g===l.goat?" selected":""}>${g}</option>`).join("")}</select>
+    <label>Time</label>
+    <input type="datetime-local" id="ed_time" value="${localTime}">
+  `;
+
+  if (l.type === "weight") {
+    html += `<label>Weight (lbs)</label><input id="ed_weight" type="number" step="0.1" value="${l.data.weight||""}">`;
+  }
+  if (l.type === "vitals") {
+    html += `
+      <label>Temp</label><input id="ed_temp" type="number" step="0.1" value="${l.data.temp||""}">
+      <label>Heart Rate</label><input id="ed_hr" type="number" value="${l.data.hr||""}">
+      <label>Respiration</label><input id="ed_resp" type="number" value="${l.data.resp||""}">
+      <label>Rumen</label><input id="ed_rumen" type="number" value="${l.data.rumen||""}">
+      <label>FAMACHA</label>
+      <select id="ed_famacha">
+        <option value="">-- not checked --</option>
+        ${[1,2,3,4,5].map(n=>`<option${l.data.famacha==n?" selected":""}>${n}</option>`).join("")}
+      </select>
+      <label>Notes</label><input id="ed_vnotes" value="${l.data.notes||""}">
+    `;
+  }
+  if (l.type === "med") {
+    const medNames = Object.keys(formulas);
+    html += `
+      <label>Medication</label>
+      <select id="ed_med">${medNames.map(m=>`<option${m===l.data.med?" selected":""}>${m}</option>`).join("")}</select>
+      <label>Dose (ml)</label><input id="ed_dose" type="number" step="0.01" value="${l.data.dose||""}">
+      <label>Route</label>
+      <select id="ed_route">
+        ${["Oral","SQ","IM","Topical","IV"].map(r=>`<option${r===l.data.route?" selected":""}>${r}</option>`).join("")}
+      </select>
+      <label>Notes</label><input id="ed_mednotes" value="${l.data.notes||""}">
+    `;
+  }
+  if (l.type === "hoof") {
+    html += `
+      <label>Condition</label>
+      <select id="ed_hoof">
+        ${["Good","Trimmed","Overgrown","Rot","Crack","Injury"].map(s=>`<option${s===l.data.state?" selected":""}>${s}</option>`).join("")}
+      </select>
+      <label>Notes</label><input id="ed_hoofnotes" value="${l.data.notes||""}">
+    `;
+  }
+  if (l.type === "obs") {
+    html += `
+      <label>Observation</label>
+      <textarea id="ed_obs" rows="3">${l.data.note||""}</textarea>
+      <label>Severity</label>
+      <select id="ed_sev">
+        ${["Low","Moderate","High","Urgent"].map(s=>`<option${s===l.data.sev?" selected":""}>${s}</option>`).join("")}
+      </select>
+    `;
+  }
+  if (l.type === "birth") {
+    html += `
+      <label>Kids</label><input id="ed_kids" value="${l.data.kids||""}">
+      <label>Dam</label>
+      <select id="ed_dam">${goats.map(g=>`<option${g===l.data.dam?" selected":""}>${g}</option>`).join("")}</select>
+      <label>Birth type</label>
+      <select id="ed_birthtype">
+        ${["Natural","Assisted","C-section"].map(s=>`<option${s===l.data.type?" selected":""}>${s}</option>`).join("")}
+      </select>
+      <label>Notes</label><textarea id="ed_birthnotes" rows="2">${l.data.notes||""}</textarea>
+    `;
+  }
+  if (l.type === "activity") {
+    const prevTitles = [...new Set(
+      logs.filter(x => x.type === "activity" && x.data.title).map(x => x.data.title)
+    )];
+    html += `
+      <label>Title</label>
+      <input id="ed_actitle" list="edActivityTitles" value="${l.data.title||""}">
+      <datalist id="edActivityTitles">
+        ${prevTitles.map(t => `<option value="${t}">`).join("")}
+      </datalist>
+      <label>Description</label>
+      <textarea id="ed_acdesc" rows="4">${l.data.desc||""}</textarea>
+    `;
+  }
+
+  fields.innerHTML = html;
+  document.getElementById("editModal").style.display = "block";
+}
+
+function saveEdit() {
+  const l = logs.find(l => l.id === editingId);
+  if (!l) return;
+
+  l.goat = document.getElementById("ed_goat").value;
+  const edTime = document.getElementById("ed_time").value;
+  l.time = edTime ? new Date(edTime).toISOString() : l.time;
+  l.synced = false; // mark for re-sync since data changed
+
+  if (l.type === "weight") {
+    l.data.weight = parseFloat(document.getElementById("ed_weight").value) || 0;
+    weights[l.goat] = l.data.weight;
+    localStorage.setItem("weights", JSON.stringify(weights));
+  }
+  if (l.type === "vitals") {
+    l.data.temp    = parseFloat(document.getElementById("ed_temp").value)  || null;
+    l.data.hr      = parseFloat(document.getElementById("ed_hr").value)    || null;
+    l.data.resp    = parseFloat(document.getElementById("ed_resp").value)  || null;
+    l.data.rumen   = parseFloat(document.getElementById("ed_rumen").value) || null;
+    l.data.famacha = document.getElementById("ed_famacha").value || null;
+    l.data.notes   = document.getElementById("ed_vnotes").value;
+  }
+  if (l.type === "med") {
+    l.data.med   = document.getElementById("ed_med").value;
+    l.data.dose  = parseFloat(document.getElementById("ed_dose").value) || 0;
+    l.data.route = document.getElementById("ed_route").value;
+    l.data.notes = document.getElementById("ed_mednotes").value;
+  }
+  if (l.type === "hoof") {
+    l.data.state = document.getElementById("ed_hoof").value;
+    l.data.notes = document.getElementById("ed_hoofnotes").value;
+  }
+  if (l.type === "obs") {
+    l.data.note = document.getElementById("ed_obs").value;
+    l.data.sev  = document.getElementById("ed_sev").value;
+  }
+  if (l.type === "birth") {
+    l.data.kids  = document.getElementById("ed_kids").value;
+    l.data.dam   = document.getElementById("ed_dam").value;
+    l.data.type  = document.getElementById("ed_birthtype").value;
+    l.data.notes = document.getElementById("ed_birthnotes").value;
+  }
+  if (l.type === "activity") {
+    l.data.title = document.getElementById("ed_actitle").value;
+    l.data.desc  = document.getElementById("ed_acdesc").value;
+  }
+
+  localStorage.setItem("logs", JSON.stringify(logs));
+  closeEdit();
+  renderHistory();
+  renderRecent();
+}
+
+function closeEdit() {
+  document.getElementById("editModal").style.display = "none";
+  const saveBtn = document.getElementById("modalSaveBtn");
+  saveBtn.textContent = "💾 Save";
+  saveBtn.style.background = "";
+  saveBtn.onclick = saveEdit;
+  editingId = null;
+}
+
+// ===== INIT =====
+// Patch any logs saved before IDs were added, and fix any invalid timestamps or missing data
+logs.forEach(l => {
+  if (!l.id) l.id = Date.now() + Math.random().toString(36).slice(2);
+  if (!l.time || isNaN(new Date(l.time).getTime())) l.time = new Date().toISOString();
+  if (!l.data) l.data = {};
+});
+localStorage.setItem("logs", JSON.stringify(logs));
+populateGoatSelect();
+renderRecent();
+
+// ===== SERVICE WORKER =====
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+
+<!-- ===== EDIT MODAL ===== -->
+<div id="editModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:999;overflow-y:auto;">
+  <div style="background:#2a2a2a;margin:20px auto;max-width:480px;border-radius:10px;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <strong id="editTitle" style="font-size:18px;">Edit Log</strong>
+      <button onclick="closeEdit()" style="padding:6px 12px;margin:0;background:#555;">✕</button>
+    </div>
+    <div id="editFields"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button id="modalSaveBtn" onclick="saveEdit()" style="flex:1;margin:0;">💾 Save</button>
+      <button onclick="closeEdit()" class="secondary" style="flex:1;margin:0;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
