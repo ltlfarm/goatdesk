@@ -135,7 +135,10 @@ input:focus, select:focus, textarea:focus {
 <body>
 
 <header>
-  <span>🐐 Goat Desk</span>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <img id="farmLogo" src="" alt="" style="height:40px;width:auto;display:none;border-radius:4px;">
+    <span>🐐 Goat Desk</span>
+  </div>
   <small id="syncStatus">Offline mode</small>
 </header>
 
@@ -144,11 +147,12 @@ input:focus, select:focus, textarea:focus {
   <div class="box">
     <div class="nav-bar">
       <button onclick="startFlow('weight')">⚖️ Weight</button>
-      <button onclick="startFlow('vitals')">❤️ Vitals</button>
-      <button onclick="startFlow('med')">💊 Med</button>
-      <button onclick="startFlow('hoof')">🦶 Hoof</button>
+      <button onclick="startFlow('vitals')">🌡️ Vitals</button>
+      <button onclick="startFlow('med')">💉 Med</button>
+      <button onclick="startFlow('proc')">✂️ Procedure</button>
+      <button onclick="startFlow('hoof')"><svg style="width:18px;height:18px;vertical-align:middle;margin-right:4px;" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="22" cy="28" rx="8" ry="11" fill="white" transform="rotate(-10 22 28)"/><ellipse cx="38" cy="26" rx="8" ry="11" fill="white" transform="rotate(10 38 26)"/><ellipse cx="30" cy="42" rx="9" ry="6" fill="white"/><line x1="30" y1="17" x2="30" y2="38" stroke="#3a7733" stroke-width="2.5" stroke-linecap="round"/></svg>Hoof</button>
       <button onclick="startFlow('obs')">👁️ Observe</button>
-      <button onclick="startFlow('birth')">🐣 Birth</button>
+      <button onclick="startFlow('birth')">🐐🍼 Birth</button>
       <button onclick="startFlow('activity')">📝 Activity</button>
     </div>
     <div class="nav-bar">
@@ -215,6 +219,7 @@ input:focus, select:focus, textarea:focus {
       <option value="weight">Weight</option>
       <option value="vitals">Vitals</option>
       <option value="med">Med</option>
+      <option value="proc">Procedure</option>
       <option value="hoof">Hoof</option>
       <option value="obs">Observation</option>
       <option value="birth">Birth</option>
@@ -387,6 +392,7 @@ const FLOWS = {
   weight:   ["weight"],
   vitals:   ["vitals"],
   med:      ["med"],
+  proc:     ["proc"],
   hoof:     ["hoof"],
   obs:      ["obs"],
   birth:    ["birth"],
@@ -399,6 +405,7 @@ const TYPE_LABELS = {
   weight:   "⚖️ Weight",
   vitals:   "❤️ Vitals",
   med:      "💊 Medication",
+  proc:     "🔧 Procedure",
   hoof:     "🦶 Hoof",
   obs:      "👁️ Observation",
   birth:    "🐣 Birth",
@@ -734,6 +741,61 @@ function renderStep() {
     `;
   }
 
+  if (t === "proc") {
+    const prevProcs = [...new Set(
+      logs.filter(l => l.type === "proc" && l.data.proc).map(l => l.data.proc)
+    )];
+    const defaultProcs = ["Band","Disbud","Ear Tag","Tattoo","Wean"];
+    const allProcs = [...new Set([...defaultProcs, ...prevProcs])];
+
+    const prevMethods = [...new Set(
+      logs.filter(l => l.type === "proc" && l.data.method).map(l => l.data.method)
+    )];
+    const defaultMethods = ["California Bander","Elastrator","Hot Iron","Paste","Knife","Manual"];
+    const allMethods = [...new Set([...defaultMethods, ...prevMethods])];
+
+    box.innerHTML = `
+      <label>Procedure</label>
+      <input id="f_proc" list="procList" placeholder="Select or type procedure">
+      <datalist id="procList">
+        ${allProcs.map(p => `<option value="${p}">`).join("")}
+      </datalist>
+
+      <label>Method</label>
+      <input id="f_procmethod" list="methodList" placeholder="Select or type method">
+      <datalist id="methodList">
+        ${allMethods.map(m => `<option value="${m}">`).join("")}
+      </datalist>
+
+      <label>Notes</label>
+      <textarea id="f_procnotes" rows="3" placeholder="Optional notes"></textarea>
+
+      <label>Photo</label>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button type="button" onclick="document.getElementById('f_procphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      </div>
+      <input type="file" id="f_procphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <div id="photoPreview" style="margin-top:8px;"></div>
+
+      <label>Schedule Follow-up</label>
+      <select id="f_followup">
+        <option value="">None</option>
+        <option value="7">In 1 week</option>
+        <option value="14">In 2 weeks</option>
+        <option value="21">In 3 weeks</option>
+        <option value="30">In 1 month</option>
+        <option value="custom">Custom date</option>
+      </select>
+      <input id="f_followup_date" type="date" style="display:none;margin-top:6px;">
+      <input id="f_followup_note" placeholder="Follow-up note (optional)" style="margin-top:6px;">
+    `;
+    document.getElementById("f_followup").onchange = () => {
+      const v = document.getElementById("f_followup").value;
+      document.getElementById("f_followup_date").style.display = v === "custom" ? "block" : "none";
+    };
+  }
+
   // Focus first input
   // Lock Enter briefly so stale keypress from previous step doesn't fire on the new one
   renderLock = true;
@@ -742,6 +804,46 @@ function renderStep() {
     if (el) { el.focus(); if (el.select && el.type !== "number") el.select(); }
     renderLock = false;
   }, 120);
+}
+
+// ===== PHOTO HANDLING =====
+let currentPhoto = null;
+
+function handlePhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    // Resize to max 800px wide to keep storage reasonable
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const maxW = 800;
+      const ratio = Math.min(1, maxW / img.width);
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      currentPhoto = canvas.toDataURL("image/jpeg", 0.7);
+      const preview = document.getElementById("photoPreview");
+      if (preview) {
+        preview.innerHTML = `<img src="${currentPhoto}" style="width:100%;border-radius:6px;margin-top:4px;">`;
+      }
+      const clearBtn = document.getElementById("clearPhotoBtn");
+      if (clearBtn) clearBtn.style.display = "inline-block";
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearPhoto() {
+  currentPhoto = null;
+  const preview = document.getElementById("photoPreview");
+  if (preview) preview.innerHTML = "";
+  const clearBtn = document.getElementById("clearPhotoBtn");
+  if (clearBtn) clearBtn.style.display = "none";
+  const input = document.getElementById("f_procphoto");
+  if (input) input.value = "";
 }
 
 function calcDose() {
@@ -950,6 +1052,17 @@ function saveStep() {
     };
   }
 
+  if (t === "proc") {
+    entry.data = {
+      proc:   document.getElementById("f_proc")?.value || "",
+      method: document.getElementById("f_procmethod")?.value || "",
+      notes:  document.getElementById("f_procnotes")?.value || "",
+      photo:  currentPhoto || null
+    };
+    currentPhoto = null;
+    saveFollowup(g, "proc", { proc: entry.data.proc, method: entry.data.method });
+  }
+
   logs.push(entry);
   localStorage.setItem("logs", JSON.stringify(logs));
   return true;
@@ -988,6 +1101,7 @@ function formatLog(l) {
     out = parts.join("  ") || "vitals recorded";
   }
   else if (l.type === "med")  out = (l.data.med || "") + " " + (l.data.dose || "") + " " + (l.data.unit || "ml") + " via " + (l.data.route || "");
+  else if (l.type === "proc") out = (l.data.proc || "Procedure") + (l.data.method ? " — " + l.data.method : "");
   else if (l.type === "hoof") out = (l.data.state || "?");
   else if (l.type === "obs")  out = (l.data.note || "") + (l.data.sev ? " (" + l.data.sev + ")" : "");
   else if (l.type === "birth") out = "Kids: " + (l.data.kids || "?") + " — Dam: " + (l.data.dam || "");
@@ -1036,6 +1150,7 @@ function makeLogEl(l, showActions = false) {
       <span class="log-type">${l.type}</span>
     </div>
     <div class="log-detail">${formatLog(l)}</div>
+    ${l.data?.photo ? `<img src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;">` : ""}
     <div class="log-time">${t}${l.loggedBy ? ' · ' + l.loggedBy : ''}${l.status === 'pending' ? ' ⏰ scheduled' : (l.synced ? ' ✓ synced' : '')}</div>
   `;
   if (showActions) {
@@ -1427,6 +1542,7 @@ const FARMOS_TYPE_MAP = {
   vitals:   "observation",
   obs:      "observation",
   med:      "medical",
+  proc:     "medical",
   hoof:     "maintenance",
   birth:    "birth",
   activity: "activity"
@@ -1437,6 +1553,7 @@ function farmosLogName(l) {
   if (l.type === "weight")  return `Weight of ${l.goat} is ${l.data.weight} lbs`;
   if (l.type === "vitals")  return `Vitals: ${l.goat}`;
   if (l.type === "med")     return `Administer ${l.data.med}`;
+  if (l.type === "proc")    return l.data.proc || "Procedure";
   if (l.type === "hoof")    return `Hoof trimming`;
   if (l.type === "obs")     return l.data.note ? l.data.note.slice(0, 60) : `Observation: ${l.goat}`;
   if (l.type === "birth")   return `Birth: ${l.data.kids || "unknown"}`;
@@ -1551,11 +1668,128 @@ async function testFarmOS() {
   }
 }
 
-// Fetch animals + last weights + last 50 goat logs from farmOS
-async function fetchAnimalUUIDs() {
-  const cfg = saveFarmOSCfg();
+// ===== CONFIG SYNC =====
+// Shared config stored in farmOS as activity log named _goatdesk_config
+// Contains: formulas, custom proc types, custom methods, goat list, excluded animals
+
+const CONFIG_LOG_NAME = "_goatdesk_config";
+let configLogUUID = localStorage.getItem("configLogUUID") || null;
+
+function buildConfigPayload(existingUUID) {
+  const config = {
+    formulas,
+    customProcs:   [...new Set(logs.filter(l=>l.type==="proc"&&l.data.proc).map(l=>l.data.proc))],
+    customMethods: [...new Set(logs.filter(l=>l.type==="proc"&&l.data.method).map(l=>l.data.method))],
+    goats,
+    excludedAnimals
+  };
+  const payload = {
+    data: {
+      type: "log--activity",
+      attributes: {
+        name: CONFIG_LOG_NAME,
+        status: "done",
+        notes: {
+          value: JSON.stringify(config),
+          format: "default"
+        }
+      }
+    }
+  };
+  if (existingUUID) payload.data.id = existingUUID;
+  return payload;
+}
+
+async function pushConfig(token) {
+  const headers = {
+    "Content-Type":  "application/vnd.api+json",
+    "Accept":        "application/vnd.api+json",
+    "Authorization": "Bearer " + token
+  };
+  if (configLogUUID) {
+    // PATCH existing config log
+    const payload = buildConfigPayload(configLogUUID);
+    const res = await fetch(apiUrl("/api/log/activity/" + configLogUUID), {
+      method: "PATCH", headers, body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      // If 404 the config log was deleted — fall through to POST
+      if (res.status === 404) {
+        configLogUUID = null;
+        localStorage.removeItem("configLogUUID");
+      } else {
+        throw new Error("Config push failed: " + res.status);
+      }
+    }
+  }
+  if (!configLogUUID) {
+    // POST new config log
+    const payload = buildConfigPayload(null);
+    const res = await fetch(apiUrl("/api/log/activity"), {
+      method: "POST", headers, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error("Config create failed: " + res.status);
+    const data = await res.json();
+    configLogUUID = data.data.id;
+    localStorage.setItem("configLogUUID", configLogUUID);
+  }
+}
+
+async function pullConfig(token) {
+  const authHeaders = {
+    "Authorization": "Bearer " + token,
+    "Accept": "application/vnd.api+json"
+  };
+  // Search for the config log by name
+  const res = await fetch(
+    apiUrl("/api/log/activity?filter[name]=" + encodeURIComponent(CONFIG_LOG_NAME) + "&page[limit]=1"),
+    { headers: authHeaders }
+  );
+  if (!res.ok) return; // silently skip if can't fetch
+  const data = await res.json();
+  const record = (data.data || [])[0];
+  if (!record) return; // no config pushed yet — first push will create it
+
+  configLogUUID = record.id;
+  localStorage.setItem("configLogUUID", configLogUUID);
+
+  let config;
+  try {
+    config = JSON.parse(record.attributes?.notes?.value || "{}");
+  } catch(e) { return; }
+
+  // Apply remote config to local
+  if (config.formulas && typeof config.formulas === "object") {
+    formulas = config.formulas;
+    localStorage.setItem("formulas", JSON.stringify(formulas));
+  }
+  if (Array.isArray(config.goats) && config.goats.length > 0) {
+    goats = config.goats;
+    localStorage.setItem("goats", JSON.stringify(goats));
+  }
+  if (Array.isArray(config.excludedAnimals)) {
+    excludedAnimals = config.excludedAnimals;
+    localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
+  }
+  // Custom proc/method lists are derived from logs — no need to store separately
+}
+
+// ===== FETCH (animals + logs + config) =====
+async function fetchAnimalUUIDs(silent = false) {
+  const cfg = JSON.parse(localStorage.getItem("farmosCfg") || "{}");
+  if (!cfg.url || !cfg.user || !cfg.pass) {
+    if (!silent) {
+      const el = document.getElementById("farmosTestResult");
+      if (el) { el.textContent = "⚠️ FarmOS not configured."; el.style.color = "#c90"; }
+    }
+    return;
+  }
+
+  // Save cfg to fields if on sync screen
+  const urlEl = document.getElementById("farmosUrl");
+  if (urlEl) saveFarmOSCfg();
+
   const el = document.getElementById("farmosTestResult");
-  el.style.color = "#888";
 
   try {
     const token = await getToken(cfg);
@@ -1564,48 +1798,73 @@ async function fetchAnimalUUIDs() {
       "Accept": "application/vnd.api+json"
     };
 
-    // ===== STEP 1: Fetch all animals — update UUID cache only =====
-    el.textContent = "Fetching animals...";
+    if (!silent && el) { el.style.color = "#888"; el.textContent = "Fetching config..."; }
+
+    // ===== STEP 1: Pull shared config from farmOS =====
+    await pullConfig(token);
+
+    // ===== STEP 2: Fetch all animals =====
+    if (!silent && el) el.textContent = "Fetching animals...";
     const animalRes = await fetch(apiUrl("/api/asset/animal?page[limit]=100"), { headers: authHeaders });
     if (!animalRes.ok) throw new Error("Animals fetch failed: HTTP " + animalRes.status);
     const animalData = await animalRes.json();
 
     animalUUIDs = {};
+    const archivedNames = [];
+
     (animalData.data || []).forEach(a => {
-      // Skip archived animals
-      if (a.attributes.status === "archived") return;
-      animalUUIDs[a.attributes.name] = a.id;
+      const name = a.attributes.name;
+      if (a.attributes.status === "archived") {
+        // Track archived animals to auto-exclude
+        archivedNames.push(name);
+        return;
+      }
+      animalUUIDs[name] = a.id;
+      // Add to goat list if not already there and not excluded
+      if (!goats.includes(name) && !excludedAnimals.includes(name)) {
+        goats.push(name);
+      }
     });
 
+    // Auto-exclude archived animals
+    archivedNames.forEach(name => {
+      if (goats.includes(name)) {
+        goats = goats.filter(g => g !== name);
+      }
+      if (!excludedAnimals.includes(name)) {
+        excludedAnimals.push(name);
+      }
+    });
+
+    goats.sort();
+    localStorage.setItem("goats", JSON.stringify(goats));
+    localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
     localStorage.setItem("animalUUIDs", JSON.stringify(animalUUIDs));
+    populateGoatSelect();
 
-    // Goat list is managed in Settings — Fetch Animals never overwrites it
-    // It only updates the UUID cache so logs link to the right animals in farmOS
+    // ===== STEP 3: Fetch recent logs =====
+    if (!silent && el) el.textContent = "Fetching recent logs...";
 
-    // ===== STEP 2: Fetch last 50 goat-related logs from farmOS =====
-    el.textContent = "Fetching recent logs...";
-
-    // Fetch last 50 of each log type sorted newest first
-    const logsRes = await fetch(
-      apiUrl("/api/log/activity?page[limit]=50&sort=-timestamp"),
-      { headers: authHeaders }
-    );
-
-    const [obsRes, medRes, maintRes] = await Promise.all([
-      fetch(apiUrl("/api/log/observation?page[limit]=50&sort=-timestamp"),  { headers: authHeaders }),
-      fetch(apiUrl("/api/log/medical?page[limit]=50&sort=-timestamp"),      { headers: authHeaders }),
-      fetch(apiUrl("/api/log/maintenance?page[limit]=50&sort=-timestamp"),  { headers: authHeaders })
+    const [actRes, obsRes, medRes, maintRes] = await Promise.all([
+      fetch(apiUrl("/api/log/activity?page[limit]=50&sort=-timestamp"),    { headers: authHeaders }),
+      fetch(apiUrl("/api/log/observation?page[limit]=50&sort=-timestamp"), { headers: authHeaders }),
+      fetch(apiUrl("/api/log/medical?page[limit]=50&sort=-timestamp"),     { headers: authHeaders }),
+      fetch(apiUrl("/api/log/maintenance?page[limit]=50&sort=-timestamp"), { headers: authHeaders })
     ]);
 
     const allLogs = [];
-    for (const res of [logsRes, obsRes, medRes, maintRes]) {
+    for (const res of [actRes, obsRes, medRes, maintRes]) {
       if (res.ok) {
         const d = await res.json();
-        (d.data || []).forEach(l => allLogs.push(l));
+        (d.data || []).forEach(l => {
+          // Skip the config log
+          if (l.attributes?.name === CONFIG_LOG_NAME) return;
+          allLogs.push(l);
+        });
       }
     }
 
-    // Try to fetch user list for ID->name mapping, may fail due to permissions
+    // Try to fetch user list for ID->name mapping
     const userNames = {};
     try {
       const userRes = await fetch(apiUrl("/api/user/user?page[limit]=50"), { headers: authHeaders });
@@ -1619,8 +1878,6 @@ async function fetchAnimalUUIDs() {
       }
     } catch(e) { /* optional */ }
 
-    // If user list fetch failed, map the current user's ID using their login
-    // We do this by fetching the current user profile
     if (Object.keys(userNames).length === 0) {
       try {
         const meRes = await fetch(apiUrl("/api/user/user?filter[name]=" + encodeURIComponent(cfg.user) + "&page[limit]=1"), { headers: authHeaders });
@@ -1637,97 +1894,98 @@ async function fetchAnimalUUIDs() {
 
     const farmosLogs = [];
     allLogs.forEach(log => {
-        const attrs = log.attributes;
-        const assets = log.relationships?.asset?.data || [];
+      const attrs = log.attributes;
+      const assets = log.relationships?.asset?.data || [];
 
-        // Get animal names from UUID lookup (reverse lookup)
-        const linkedAnimals = assets
-          .map(a => Object.keys(animalUUIDs).find(name => animalUUIDs[name] === a.id))
-          .filter(Boolean);
+      const linkedAnimals = assets
+        .map(a => Object.keys(animalUUIDs).find(name => animalUUIDs[name] === a.id))
+        .filter(Boolean);
 
-        // Only keep logs linked to animals in our goat list
-        const goatLinks = linkedAnimals.filter(name => goats.includes(name));
-        if (goatLinks.length === 0) return;
+      const goatLinks = linkedAnimals.filter(name => goats.includes(name));
+      if (goatLinks.length === 0) return;
 
-        const logEntry = {
-          id:     log.id,
-          goat:   goatLinks[0],
-          type:   mapFarmOSTypeToLocal(log.type, attrs.name),
-          time:   (() => {
-                    // farmOS v2: timestamp is the event time (unix int string or ISO)
-                    // created is when the record was made — better fallback than now()
-                    const ts = attrs.timestamp;
-                    const cr = attrs.created || attrs.changed;
-                    // Try timestamp first
-                    if (ts) {
-                      // Could be unix integer string "1526584271" or ISO "2026-05-24T04:44:12+00:00"
-                      const asInt = Number(ts);
-                      if (!isNaN(asInt) && asInt > 1000000000) {
-                        return new Date(asInt * 1000).toISOString();
-                      }
-                      const parsed = new Date(ts);
-                      if (!isNaN(parsed.getTime())) return parsed.toISOString();
-                    }
-                    // Fall back to created time
-                    if (cr) {
-                      const asInt = Number(cr);
-                      if (!isNaN(asInt) && asInt > 1000000000) {
-                        return new Date(asInt * 1000).toISOString();
-                      }
-                      const parsed = new Date(cr);
-                      if (!isNaN(parsed.getTime())) return parsed.toISOString();
-                    }
-                    return new Date().toISOString();
-                  })(),
-          data:   parseFarmOSNotes(log.type, attrs.name, attrs.notes?.value || ""),
-          synced: true,
-          fromFarmOS: true,
-          status: attrs.status === "pending" ? "pending" : "done",
-          // Pull owner name from attributes if available, fall back to uid relationship display name
-          loggedBy: (() => {
-            const uidRel = log.relationships?.uid?.data;
-            const ownerRel = log.relationships?.owner?.data;
-            const rel = uidRel || (Array.isArray(ownerRel) ? ownerRel[0] : ownerRel);
-            if (!rel) return "";
-            const internalId = rel.meta?.drupal_internal__target_id;
-            if (internalId && userNames[internalId]) return userNames[internalId];
-            return "";
-          })()
-        };
+      const logEntry = {
+        id:     log.id,
+        goat:   goatLinks[0],
+        type:   mapFarmOSTypeToLocal(log.type, attrs.name),
+        time:   (() => {
+                  const ts = attrs.timestamp;
+                  const cr = attrs.created || attrs.changed;
+                  if (ts) {
+                    const asInt = Number(ts);
+                    if (!isNaN(asInt) && asInt > 1000000000) return new Date(asInt * 1000).toISOString();
+                    const parsed = new Date(ts);
+                    if (!isNaN(parsed.getTime())) return parsed.toISOString();
+                  }
+                  if (cr) {
+                    const asInt = Number(cr);
+                    if (!isNaN(asInt) && asInt > 1000000000) return new Date(asInt * 1000).toISOString();
+                    const parsed = new Date(cr);
+                    if (!isNaN(parsed.getTime())) return parsed.toISOString();
+                  }
+                  return new Date().toISOString();
+                })(),
+        data:   parseFarmOSNotes(log.type, attrs.name, attrs.notes?.value || ""),
+        synced: true,
+        fromFarmOS: true,
+        status: attrs.status === "pending" ? "pending" : "done",
+        loggedBy: (() => {
+          const uidRel = log.relationships?.uid?.data;
+          const ownerRel = log.relationships?.owner?.data;
+          const rel = uidRel || (Array.isArray(ownerRel) ? ownerRel[0] : ownerRel);
+          if (!rel) return "";
+          const internalId = rel.meta?.drupal_internal__target_id;
+          if (internalId && userNames[internalId]) return userNames[internalId];
+          return "";
+        })()
+      };
 
-        farmosLogs.push(logEntry);
+      farmosLogs.push(logEntry);
 
-        // Extract weight from weight logs and update weights cache
-        if (logEntry.type === "weight" && logEntry.data.weight) {
-          const g = logEntry.goat;
-          const existingTime = weights[g + "_time"] ? new Date(weights[g + "_time"]).getTime() : 0;
-          const newTime = new Date(logEntry.time).getTime();
-          if (!weights[g] || (!isNaN(newTime) && newTime > existingTime)) {
-            weights[g] = logEntry.data.weight;
-            weights[g + "_time"] = logEntry.time;
-          }
+      if (logEntry.type === "weight" && logEntry.data.weight) {
+        const g = logEntry.goat;
+        const existingTime = weights[g + "_time"] ? new Date(weights[g + "_time"]).getTime() : 0;
+        const newTime = new Date(logEntry.time).getTime();
+        if (!weights[g] || (!isNaN(newTime) && newTime > existingTime)) {
+          weights[g] = logEntry.data.weight;
+          weights[g + "_time"] = logEntry.time;
         }
-      });
+      }
+    });
 
-    // Merge farmOS logs into local logs — skip any already present by farmOS id
+    // Merge — never overwrite unsynced local logs
     const existingFarmOSIds = new Set(logs.filter(l => l.fromFarmOS).map(l => l.id));
     let added = 0;
     farmosLogs.forEach(l => {
-      if (!existingFarmOSIds.has(l.id)) {
-        logs.push(l);
-        added++;
-      }
+      if (!existingFarmOSIds.has(l.id)) { logs.push(l); added++; }
     });
 
     localStorage.setItem("logs", JSON.stringify(logs));
     localStorage.setItem("weights", JSON.stringify(weights));
 
-    el.textContent = `✅ UUID cache updated, ${added} logs imported, weights updated`;
-    el.style.color = "#3a7";
+    // Update last sync time
+    const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    localStorage.setItem("lastSync", now);
+    const statusEl = document.getElementById("syncStatus");
+    if (statusEl) statusEl.textContent = "Synced " + now;
+
+    if (!silent && el) {
+      el.textContent = `✅ Config synced, ${added} logs imported, animals updated`;
+      el.style.color = "#3a7";
+    }
+
+    renderRecent();
+    renderPending();
 
   } catch(e) {
-    el.textContent = "❌ " + e.message;
-    el.style.color = "#c00";
+    if (!silent) {
+      if (el) { el.textContent = "❌ " + e.message; el.style.color = "#c00"; }
+    }
+    // Silent startup fetch — just update status bar
+    if (silent) {
+      const statusEl = document.getElementById("syncStatus");
+      if (statusEl) statusEl.textContent = "Offline";
+    }
   }
 }
 
@@ -1825,9 +2083,6 @@ async function syncToFarmOS() {
   const logEl = document.getElementById("syncLog");
   logEl.textContent = "Authenticating...\n";
 
-  const unsynced = logs.filter(l => !l.synced);
-  if (!unsynced.length) { logEl.textContent = "Nothing to sync."; return; }
-
   let token;
   try {
     token = await getToken(cfg);
@@ -1837,38 +2092,64 @@ async function syncToFarmOS() {
     return;
   }
 
-  const headers = {
-    "Content-Type":  "application/vnd.api+json",
-    "Accept":        "application/vnd.api+json",
-    "Authorization": "Bearer " + token
-  };
-
-  let ok = 0, fail = 0;
-
-  for (const l of unsynced) {
-    const farmosType = FARMOS_TYPE_MAP[l.type] || "activity";
-    const payload = buildFarmOSPayload(l);
-    const url = apiUrl("/api/log/" + farmosType);
-    try {
-      const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
-      if (res.ok) {
-        l.synced = true;
-        ok++;
-        logEl.textContent += `✅ ${l.goat} | ${farmosLogName(l)}\n`;
-      } else {
-        const txt = await res.text();
-        fail++;
-        logEl.textContent += `❌ ${l.goat} ${l.type} — ${res.status}: ${txt.slice(0,80)}\n`;
-      }
-    } catch(e) {
-      fail++;
-      logEl.textContent += `❌ ${l.goat} ${l.type} — ${e.message}\n`;
-    }
+  // ===== STEP 1: Fetch first to pull remote changes before pushing =====
+  logEl.textContent += "Fetching remote changes first...\n";
+  try {
+    await fetchAnimalUUIDs(true); // silent fetch
+    logEl.textContent += "✅ Remote fetch complete\n";
+  } catch(e) {
+    logEl.textContent += "⚠️ Fetch skipped: " + e.message + "\n";
+    // Continue anyway — don't block push if fetch fails
   }
 
-  localStorage.setItem("logs", JSON.stringify(logs));
-  logEl.textContent += `\nDone: ${ok} pushed, ${fail} failed.`;
-  document.getElementById("unsyncedCount").textContent = logs.filter(l => !l.synced).length;
+  // ===== STEP 2: Push unsynced logs =====
+  const unsynced = logs.filter(l => !l.synced);
+  if (!unsynced.length) {
+    logEl.textContent += "Nothing to push.\n";
+  } else {
+    const headers = {
+      "Content-Type":  "application/vnd.api+json",
+      "Accept":        "application/vnd.api+json",
+      "Authorization": "Bearer " + token
+    };
+
+    let ok = 0, fail = 0;
+
+    for (const l of unsynced) {
+      const farmosType = FARMOS_TYPE_MAP[l.type] || "activity";
+      const payload = buildFarmOSPayload(l);
+      const url = apiUrl("/api/log/" + farmosType);
+      try {
+        const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
+        if (res.ok) {
+          l.synced = true;
+          ok++;
+          logEl.textContent += `✅ ${l.goat} | ${farmosLogName(l)}\n`;
+        } else {
+          const txt = await res.text();
+          fail++;
+          logEl.textContent += `❌ ${l.goat} ${l.type} — ${res.status}: ${txt.slice(0,80)}\n`;
+        }
+      } catch(e) {
+        fail++;
+        logEl.textContent += `❌ ${l.goat} ${l.type} — ${e.message}\n`;
+      }
+    }
+
+    localStorage.setItem("logs", JSON.stringify(logs));
+    logEl.textContent += `\nPushed: ${ok} ok, ${fail} failed.\n`;
+    document.getElementById("unsyncedCount").textContent = logs.filter(l => !l.synced).length;
+  }
+
+  // ===== STEP 3: Push shared config =====
+  logEl.textContent += "Pushing config...\n";
+  try {
+    await pushConfig(token);
+    logEl.textContent += "✅ Config synced\n";
+  } catch(e) {
+    logEl.textContent += "⚠️ Config push failed: " + e.message + "\n";
+  }
+
   logEl.scrollTop = logEl.scrollHeight;
 }
 
@@ -2051,6 +2332,18 @@ function openEdit(id) {
     `;
   }
 
+  if (l.type === "proc") {
+    html += `
+      <label>Procedure</label>
+      <input id="ed_proc" value="${l.data.proc||""}">
+      <label>Method</label>
+      <input id="ed_procmethod" value="${l.data.method||""}">
+      <label>Notes</label>
+      <textarea id="ed_procnotes" rows="3">${l.data.notes||""}</textarea>
+      ${l.data.photo ? `<label>Photo</label><img src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:4px;">` : ""}
+    `;
+  }
+
   fields.innerHTML = html;
   document.getElementById("editModal").style.display = "block";
 }
@@ -2101,6 +2394,11 @@ function saveEdit() {
     l.data.title = document.getElementById("ed_actitle").value;
     l.data.desc  = document.getElementById("ed_acdesc").value;
   }
+  if (l.type === "proc") {
+    l.data.proc   = document.getElementById("ed_proc").value;
+    l.data.method = document.getElementById("ed_procmethod").value;
+    l.data.notes  = document.getElementById("ed_procnotes").value;
+  }
 
   localStorage.setItem("logs", JSON.stringify(logs));
   closeEdit();
@@ -2127,6 +2425,21 @@ logs.forEach(l => {
 localStorage.setItem("logs", JSON.stringify(logs));
 populateGoatSelect();
 renderRecent();
+
+// Show last sync time in status bar
+const lastSync = localStorage.getItem("lastSync");
+const statusEl = document.getElementById("syncStatus");
+if (statusEl) statusEl.textContent = lastSync ? "Synced " + lastSync : "Offline";
+
+// Silent startup fetch — no failure if offline
+setTimeout(() => fetchAnimalUUIDs(true), 500);
+
+// ===== LOGO =====
+(function() {
+  const LOGO = "data:image/png;base64,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";
+  const el = document.getElementById("farmLogo");
+  if (el && LOGO) { el.src = LOGO; el.style.display = "block"; }
+})();
 
 // ===== SERVICE WORKER =====
 if ("serviceWorker" in navigator) {
