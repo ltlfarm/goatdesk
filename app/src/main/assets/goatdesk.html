@@ -311,6 +311,8 @@ input:focus, select:focus, textarea:focus {
     <button onclick="logout()" class="wide secondary">🚪 Log Out</button>
   </div>
 
+</div>
+
 <!-- ===== FARMOS SYNC ===== -->
 <div id="screen-sync" class="screen">
   <div class="box">
@@ -1820,10 +1822,12 @@ function renderSync() {
   const isManager = currentRole === "manager";
 
   // Show/hide connection boxes based on role
+  // Always show full connection form if no URL saved yet (first login for any role)
+  const noUrl = !cfg.url;
   const managerConn = document.getElementById("managerOnlyConnection");
   const workerConn = document.getElementById("workerConnection");
-  if (managerConn) managerConn.style.display = isManager ? "" : "none";
-  if (workerConn) workerConn.style.display = isManager ? "none" : "";
+  if (managerConn) managerConn.style.display = (isManager || noUrl) ? "" : "none";
+  if (workerConn) workerConn.style.display = (isManager || noUrl) ? "none" : "";
 
   if (isManager) {
     if (cfg.url)  document.getElementById("farmosUrl").value  = cfg.url;
@@ -1952,6 +1956,8 @@ function apiUrl(path) {
 // ===== SHARED MODULE: role-based UI =====
 function applyRoleUI() {
   const isManager = currentRole === "manager";
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  const noUrl = !cfg.url;
   // Manager-only elements — hide for workers
   const managerOnly = [
     "managerOnlyFormulas",
@@ -1961,7 +1967,13 @@ function applyRoleUI() {
   ];
   managerOnly.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = isManager ? "" : "none";
+    if (!el) return;
+    // Always show the connection form if no URL saved yet — needed for first login
+    if (id === "managerOnlyConnection") {
+      el.style.display = (isManager || noUrl) ? "" : "none";
+    } else {
+      el.style.display = isManager ? "" : "none";
+    }
   });
   // Show role badge in header
   const badge = document.getElementById("roleBadge");
