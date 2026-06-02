@@ -75,6 +75,15 @@ input:focus, select:focus, textarea:focus {
 .log .log-detail { margin-top:3px; text-align:left; }
 .log .log-time { color:#666; font-size:13px; margin-top:2px; text-align:left; }
 
+.log-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top:3px;
+  text-align:left;
+}
+
 .ref { color:#666; font-size:12px; margin-top:2px; }
 
 .dose-display {
@@ -1381,7 +1390,13 @@ function formatLog(l) {
   else if (l.type === "med")  out = (l.data.med || "") + " " + (l.data.dose || "") + " " + (l.data.unit || "ml") + " via " + (l.data.route || "");
   else if (l.type === "proc") out = (l.data.proc || "Procedure") + (l.data.method ? " — " + l.data.method : "");
   else if (l.type === "hoof") out = (l.data.state || "?");
-  else if (l.type === "obs")  out = (l.data.title ? l.data.title + ": " : "") + (l.data.note || "") + (l.data.sev ? " (" + l.data.sev + ")" : "");
+  else if (l.type === "obs") {
+    // If title and note are the same (fetched back from farmOS), show title only
+    const obsTitle = (l.data.title || "").trim();
+    const obsNote  = (l.data.note  || "").trim();
+    const obsText  = obsTitle && obsNote && obsNote.startsWith(obsTitle) ? obsTitle : (obsTitle && obsNote ? obsTitle + ": " + obsNote : obsTitle || obsNote);
+    out = obsText + (l.data.sev ? " (" + l.data.sev + ")" : "");
+  }
   else if (l.type === "birth") out = "Kids: " + (l.data.kids || "?") + " — Dam: " + (l.data.dam || "");
   else if (l.type === "activity") out = (l.data.title || "") + (l.data.desc ? " — " + l.data.desc : "");
   else out = JSON.stringify(l.data);
@@ -1421,39 +1436,63 @@ function makeLogEl(l, showActions = false) {
   d.className = "log " + logColor(l);
   d.dataset.logId = l.id;
   const t = l.time ? (new Date(l.time).toString() !== "Invalid Date" ? new Date(l.time).toLocaleString() : "unknown time") : "unknown time";
+  const statusTag = l.status === "pending" ? " \u23F0 scheduled" : (l.synced ? " \u2713 synced" : "");
+  const detail = formatLog(l);
+
+  // Collapsed header — always visible
   d.innerHTML = `
-    <div class="log-top">
-      ${showActions ? `<input type="checkbox" class="log-select" data-id="${l.id}" style="width:auto;margin:0 8px 0 0;">` : ""}
+    <div class="log-top" style="cursor:pointer;" onclick="toggleLogDrawer(this)">
+      ${showActions ? `<input type="checkbox" class="log-select" data-id="${l.id}" style="width:auto;margin:0 8px 0 0;" onclick="event.stopPropagation()">` : ""}
       <span class="log-animal">${l.goat}</span>
       <span class="log-type">${l.type}</span>
+      <span class="log-arrow" style="margin-left:auto;color:#555;font-size:14px;">\u25BC</span>
     </div>
-    <div class="log-detail">${formatLog(l)}</div>
-    ${l.data?.photo ? `<img src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;">` : ""}
-    <div class="log-time">${t}${l.loggedBy ? ' · ' + l.loggedBy : ''}${l.status === 'pending' ? ' ⏰ scheduled' : (l.synced ? ' ✓ synced' : '')}</div>
+    <div class="log-detail log-preview">${detail}</div>
+    <div class="log-time">${t}${l.loggedBy ? " \u00B7 " + l.loggedBy : ""}${statusTag}</div>
+    <div class="log-drawer" style="display:none;">
+      ${l.data && l.data.photo ? `<img src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;">` : ""}
+    </div>
   `;
+
   if (showActions) {
+    const drawer = d.querySelector(".log-drawer");
     const actions = document.createElement("div");
-    actions.style.cssText = "display:flex;gap:6px;margin-top:6px;";
+    actions.style.cssText = "display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;";
     if (l.status === "pending") {
       const completeBtn = document.createElement("button");
-      completeBtn.textContent = "✅ Complete";
+      completeBtn.textContent = "\u2705 Complete";
       completeBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#1b4d1e;";
       completeBtn.onclick = () => completeTask(l.id);
       actions.appendChild(completeBtn);
     }
     const editBtn = document.createElement("button");
-    editBtn.textContent = "✏️ Edit";
+    editBtn.textContent = "\u270F\uFE0F Edit";
     editBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;";
     editBtn.onclick = () => openEdit(l.id);
     const delBtn = document.createElement("button");
-    delBtn.textContent = "🗑️ Delete";
+    delBtn.textContent = "\U0001F5D1\uFE0F Delete";
     delBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#8b0000;";
     delBtn.onclick = () => deleteLog(l.id);
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
-    d.appendChild(actions);
+    drawer.appendChild(actions);
   }
   return d;
+}
+
+function toggleLogDrawer(headerEl) {
+  const card = headerEl.closest(".log");
+  if (!card) return;
+  const drawer = card.querySelector(".log-drawer");
+  const preview = card.querySelector(".log-preview");
+  const arrow = card.querySelector(".log-arrow");
+  const isOpen = drawer.style.display !== "none";
+  drawer.style.display = isOpen ? "none" : "block";
+  if (preview) {
+    preview.style.webkitLineClamp = isOpen ? "2" : "unset";
+    preview.style.display = isOpen ? "-webkit-box" : "block";
+  }
+  if (arrow) arrow.textContent = isOpen ? "\u25BC" : "\u25B2";
 }
 
 // ===== PENDING TASKS =====
@@ -2673,30 +2712,18 @@ function buildFarmOSPayload(l) {
   const farmosType = FARMOS_TYPE_MAP[l.type] || "activity";
   const uuid = animalUUIDs[l.goat];
 
-  const attributes = {
-    name:      farmosLogName(l),
-    timestamp: String(Math.floor((new Date(l.time).getTime() || Date.now()) / 1000)),
-    status:    l.status === "pending" ? "pending" : "done",
-    notes: {
-      value:  formatLog(l) + (l.loggedBy ? `\nLogged by: ${l.loggedBy}` : ""),
-      format: "default"
-    }
-  };
-
-  // Weight logs — add farmOS quantity field so weight appears in the Quantity column
-  if (l.type === "weight" && l.data.weight) {
-    attributes.quantity = [{
-      measure: "weight",
-      value:   String(l.data.weight),
-      units:   "lbs",
-      label:   "Weight"
-    }];
-  }
-
   const payload = {
     data: {
       type: "log--" + farmosType,
-      attributes
+      attributes: {
+        name:      farmosLogName(l),
+        timestamp: String(Math.floor((new Date(l.time).getTime() || Date.now()) / 1000)),
+        status:    l.status === "pending" ? "pending" : "done",
+        notes: {
+          value:  formatLog(l) + (l.loggedBy ? `\nLogged by: ${l.loggedBy}` : ""),
+          format: "default"
+        }
+      }
     }
   };
 
