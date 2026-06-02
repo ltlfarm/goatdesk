@@ -808,6 +808,9 @@ function renderStep() {
 
   if (t === "obs") {
     box.innerHTML = `
+      <label>Title</label>
+      <input id="f_obstitle" placeholder="Brief title (shows as log name in farmOS)">
+
       <label>Observation</label>
       <textarea id="f_obs" rows="3" placeholder="Describe what you observed"></textarea>
 
@@ -1300,12 +1303,13 @@ function saveStep() {
 
   if (t === "obs") {
     entry.data = {
+      title: document.getElementById("f_obstitle")?.value || "",
       note:  document.getElementById("f_obs")?.value || "",
       sev:   document.getElementById("f_sev")?.value || "Low",
       photo: currentPhoto || null
     };
     currentPhoto = null;
-    saveFollowup(g, "obs", { note: entry.data.note, sev: entry.data.sev });
+    saveFollowup(g, "obs", { title: entry.data.title, note: entry.data.note, sev: entry.data.sev });
   }
 
   if (t === "birth") {
@@ -1377,7 +1381,7 @@ function formatLog(l) {
   else if (l.type === "med")  out = (l.data.med || "") + " " + (l.data.dose || "") + " " + (l.data.unit || "ml") + " via " + (l.data.route || "");
   else if (l.type === "proc") out = (l.data.proc || "Procedure") + (l.data.method ? " — " + l.data.method : "");
   else if (l.type === "hoof") out = (l.data.state || "?");
-  else if (l.type === "obs")  out = (l.data.note || "") + (l.data.sev ? " (" + l.data.sev + ")" : "");
+  else if (l.type === "obs")  out = (l.data.title ? l.data.title + ": " : "") + (l.data.note || "") + (l.data.sev ? " (" + l.data.sev + ")" : "");
   else if (l.type === "birth") out = "Kids: " + (l.data.kids || "?") + " — Dam: " + (l.data.dam || "");
   else if (l.type === "activity") out = (l.data.title || "") + (l.data.desc ? " — " + l.data.desc : "");
   else out = JSON.stringify(l.data);
@@ -1909,7 +1913,7 @@ function farmosLogName(l) {
   if (l.type === "med")     return `Administer ${l.data.med}`;
   if (l.type === "proc")    return l.data.proc || "Procedure";
   if (l.type === "hoof")    return `Hoof trimming`;
-  if (l.type === "obs")     return l.data.note ? l.data.note.slice(0, 60) : `Observation: ${l.goat}`;
+  if (l.type === "obs")     return l.data.title ? l.data.title.slice(0, 80) : (l.data.note ? l.data.note.slice(0, 60) : `Observation: ${l.goat}`);
   if (l.type === "birth")   return `Birth: ${l.data.kids || "unknown"}`;
   if (l.type === "activity") return l.data.title || "Activity";
   return l.goat + " — " + l.type;
@@ -2585,7 +2589,14 @@ function parseFarmOSNotes(farmosType, name, notes) {
     if (n.startsWith("Vitals:")) {
       return { note: nt, sev: "Low" };
     }
-    return { note: nt || n, sev: "Low" };
+    // Parse severity from notes text — stored as "note text (Severity)"
+    const sevMatch = nt.match(/\(([A-Z][a-z]+)\)\s*(?:Logged by:.*)?$/);
+    const sev = (sevMatch && ["Low","Moderate","High","Urgent"].includes(sevMatch[1])) ? sevMatch[1] : "Low";
+    // Clean severity tag from note text
+    const noteClean = nt.replace(/\s*\([A-Z][a-z]+\)\s*(?:Logged by:.*)?$/, "").trim();
+    // Log name is the title (unless it looks like a truncated note)
+    const title = (n && !n.startsWith("Observation:")) ? n : "";
+    return { title, note: noteClean || n, sev };
   }
 
   // Med logs — new format "Administer MedName" or old formats
@@ -2876,6 +2887,8 @@ function openEdit(id) {
   }
   if (l.type === "obs") {
     html += `
+      <label>Title</label>
+      <input id="ed_obstitle" value="${(l.data.title||"").replace(/"/g,"&quot;")}">
       <label>Observation</label>
       <textarea id="ed_obs" rows="3">${l.data.note||""}</textarea>
       <label>Severity</label>
@@ -2960,8 +2973,9 @@ function saveEdit() {
     l.data.notes = document.getElementById("ed_hoofnotes").value;
   }
   if (l.type === "obs") {
-    l.data.note = document.getElementById("ed_obs").value;
-    l.data.sev  = document.getElementById("ed_sev").value;
+    l.data.title = document.getElementById("ed_obstitle").value;
+    l.data.note  = document.getElementById("ed_obs").value;
+    l.data.sev   = document.getElementById("ed_sev").value;
   }
   if (l.type === "birth") {
     l.data.kids  = document.getElementById("ed_kids").value;
