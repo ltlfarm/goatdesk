@@ -165,6 +165,7 @@ input:focus, select:focus, textarea:focus {
     <div class="nav-bar">
       <button onclick="show('history')" class="secondary">📋 History</button>
       <button onclick="show('settings')" class="secondary">⚙️ Settings</button>
+      <button onclick="show('animals')" class="secondary">🐐 Animals</button>
       <button onclick="show('sync')" class="secondary">🔄 FarmOS Sync</button>
     </div>
   </div>
@@ -287,13 +288,19 @@ input:focus, select:focus, textarea:focus {
 
   <div class="box" id="managerOnlyAnimals">
     <strong>Animal List</strong>
-    <p style="color:#888;font-size:13px;">Add or remove animals from the selector. Removed animals won't return on Fetch.</p>
-    <div id="animalList"></div>
-    <div style="display:flex;gap:8px;margin-top:10px;">
-      <input id="newAnimalName" placeholder="Animal name" style="flex:1">
-      <button onclick="addAnimal()" style="margin:0;padding:10px;">Add</button>
+    <p style="color:#888;font-size:13px;">Manage animals, exclusions and the selector list.</p>
+    <button onclick="show('animals')" class="wide secondary" style="margin-top:6px;">🐐 Manage Animals</button>
+  </div>
+
+  <div class="box" id="managerOnlyLogo">
+    <strong>Farm Logo</strong>
+    <p style="color:#888;font-size:13px;">Logo shows in the header. Syncs to farmOS so farm hands see it after fetching.</p>
+    <div id="logoPreview" style="margin-bottom:8px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="document.getElementById('logoFile').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">🖼️ Pick Logo</button>
+      <button id="clearLogoBtn" onclick="clearLogo()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕ Clear</button>
     </div>
-    <div id="excludedList"></div>
+    <input type="file" id="logoFile" accept="image/*" style="display:none;" onchange="handleLogo(this)">
   </div>
 
   <div class="box" id="managerOnlyData">
@@ -302,7 +309,10 @@ input:focus, select:focus, textarea:focus {
     <button class="wide secondary" onclick="document.getElementById('importFile').click()" style="margin-top:8px;">📥 Import Logs (JSON)</button>
     <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importLogs(this)">
     <div id="importResult" style="font-size:13px;color:#888;margin-top:6px;"></div>
-    <button class="wide danger" onclick="clearLogs()" style="margin-top:8px;">🗑️ Clear All Logs</button>
+  </div>
+
+  <div class="box">
+    <button class="wide danger" onclick="clearLogs()">🗑️ Clear All Logs</button>
   </div>
 
   <div class="box">
@@ -313,12 +323,35 @@ input:focus, select:focus, textarea:focus {
 
 </div>
 
+<!-- ===== ANIMALS ===== -->
+<div id="screen-animals" class="screen">
+  <div class="box">
+    <button class="secondary" onclick="show('home')">← Home</button>
+    <h3 style="margin:10px 0 6px;">🐐 Animals</h3>
+  </div>
+
+  <div class="box">
+    <strong>Active Animals</strong>
+    <p style="color:#888;font-size:13px;">Removed animals won't return on Fetch unless restored.</p>
+    <div id="animalsAnimalList"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <input id="animalsNewName" placeholder="Animal name" style="flex:1">
+      <button onclick="addAnimalFromScreen()" style="margin:0;padding:10px;">Add</button>
+    </div>
+  </div>
+
+  <div class="box">
+    <strong>Excluded Animals</strong>
+    <p style="color:#888;font-size:13px;">Archived in farmOS or manually removed. Restore to re-add to selector.</p>
+    <div id="animalsExcludedList"></div>
+  </div>
+</div>
+
 <!-- ===== FARMOS SYNC ===== -->
 <div id="screen-sync" class="screen">
   <div class="box">
     <div style="display:flex;align-items:center;justify-content:space-between;">
       <button class="secondary" onclick="show('home')" style="margin:0;">← Home</button>
-      <span id="roleBadge" style="font-size:13px;font-weight:bold;"></span>
     </div>
     <h3 style="margin:10px 0 6px;">🔄 FarmOS Sync</h3>
   </div>
@@ -456,6 +489,7 @@ function show(id) {
   if (id === "history") { renderHistory(); }
   if (id === "settings") { renderSettings(); }
   if (id === "sync") { renderSync(); }
+  if (id === "animals") { renderAnimalsScreen(); }
 }
 
 // ===== FLOW =====
@@ -565,24 +599,26 @@ function renderStep() {
     box.innerHTML = `
       <label>Weight (lbs)</label>
       <input id="f_weight" type="tel" inputmode="numeric" value="${lw}" placeholder="e.g. 10505 → 105.05">
-      <div id="weightDisplay" style="font-size:22px;text-align:center;padding:8px;color:#3a7;font-weight:bold;">${lw ? lw + " lbs" : ""}</div>
     `;
     const wEl = document.getElementById("f_weight");
     // Auto-select so typing immediately overwrites
     setTimeout(() => { wEl.focus(); wEl.select(); }, 10);
     wEl.addEventListener("input", () => {
       const raw = wEl.value.replace(/\D/g, "");
-      if (raw.length === 0) { document.getElementById("weightDisplay").textContent = ""; return; }
+      if (!raw.length) { wEl.dataset.parsed = ""; return; }
       const num = (parseInt(raw, 10) / 100).toFixed(2);
-      document.getElementById("weightDisplay").textContent = num + " lbs";
       wEl.dataset.parsed = num;
+      // Replace field value with decimal in place — cursor stays at end
+      const cursor = wEl.selectionStart;
+      wEl.value = num;
+      try { wEl.setSelectionRange(num.length, num.length); } catch(e) {}
     });
   }
 
   if (t === "vitals") {
     box.innerHTML = `
       <label>Temp (°F) <span class="ref">normal: 101–103.5</span></label>
-      <input id="f_temp" type="number" step="0.1" placeholder="e.g. 102.4">
+      <input id="f_temp" type="tel" inputmode="numeric" placeholder="e.g. 1015 → 101.5">
 
       <label>Heart Rate (bpm) <span class="ref">normal: 70–90</span></label>
       <input id="f_hr" type="number" placeholder="e.g. 80">
@@ -603,12 +639,20 @@ function renderStep() {
       <label>Notes</label>
       <input id="f_vnotes" placeholder="Optional notes">
     `;
-    document.getElementById("f_temp").oninput = updateVitalColors;
+    const tempEl = document.getElementById("f_temp");
+    tempEl.oninput = () => {
+      const raw = tempEl.value.replace(/\D/g, "");
+      if (!raw.length) { tempEl.dataset.parsed = ""; updateVitalColors(); return; }
+      const num = (parseInt(raw, 10) / 10).toFixed(1);
+      tempEl.dataset.parsed = num;
+      tempEl.value = num;
+      try { tempEl.setSelectionRange(num.length, num.length); } catch(e) {}
+      updateVitalColors();
+    };
     document.getElementById("f_hr").oninput = updateVitalColors;
     document.getElementById("f_resp").oninput = updateVitalColors;
     document.getElementById("f_rumen").oninput = updateVitalColors;
     document.getElementById("f_famacha").onchange = updateVitalColors;
-    // color any pre-filled values immediately
     updateVitalColors();
   }
 
@@ -1036,8 +1080,9 @@ function calcDose() {
 }
 
 function updateVitalColors() {
-  const temp = parseFloat(document.getElementById("f_temp")?.value);
+  // Temp uses raw tel input — read from dataset.parsed (set by oninput handler)
   const te = document.getElementById("f_temp");
+  const temp = parseFloat(te?.dataset?.parsed || "");
   if (te && !isNaN(temp)) {
     te.className = (temp < 101 || temp > 104) ? "bad" : (temp > 103.5) ? "warn" : "good";
   }
@@ -1164,7 +1209,7 @@ function saveStep() {
 
   if (t === "vitals") {
     entry.data = {
-      temp:    parseFloat(document.getElementById("f_temp")?.value)  || null,
+      temp:    parseFloat(document.getElementById("f_temp")?.dataset?.parsed || document.getElementById("f_temp")?.value) || null,
       hr:      parseFloat(document.getElementById("f_hr")?.value)    || null,
       resp:    parseFloat(document.getElementById("f_resp")?.value)  || null,
       rumen:   parseFloat(document.getElementById("f_rumen")?.value) || null,
@@ -1441,13 +1486,14 @@ function timeVal(l) {
 function renderRecent() {
   const box = document.getElementById("recent");
   box.innerHTML = "";
+  // Always render pending first so Scheduled Tasks box clears correctly even when no active logs
+  renderPending();
   // Exclude pending tasks from recent — they show in Scheduled Tasks section
   const active = logs.filter(l => l.status !== "pending");
   if (!active.length) { box.innerHTML = "<div style='color:#666;padding:8px;'>No logs yet</div>"; return; }
   active.slice().sort((a,b) => timeVal(b) - timeVal(a))
     .slice(0, 15)
     .forEach(l => box.appendChild(makeLogEl(l)));
-  renderPending();
 }
 
 // ===== HISTORY =====
@@ -1509,6 +1555,16 @@ function renderSettings() {
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   const userInfo = document.getElementById("settingsUserInfo");
   if (userInfo) userInfo.textContent = cfg.user ? `Logged in as: ${cfg.user} (${currentRole})` : "Not logged in";
+  // Logo preview
+  const logoPreview = document.getElementById("logoPreview");
+  const clearLogoBtn = document.getElementById("clearLogoBtn");
+  const savedLogo = localStorage.getItem("farmdesk_logo");
+  if (logoPreview) {
+    logoPreview.innerHTML = savedLogo
+      ? `<img src="${savedLogo}" style="max-height:60px;max-width:180px;border-radius:4px;border:1px solid #444;">`
+      : "<div style='color:#666;font-size:13px;'>No custom logo set — default logo in use</div>";
+  }
+  if (clearLogoBtn) clearLogoBtn.style.display = savedLogo ? "inline-block" : "none";
   // Formulas table
   const tbody = document.getElementById("formulaRows");
   tbody.innerHTML = "";
@@ -1594,45 +1650,7 @@ function renderSettings() {
     tbody.appendChild(tr);
   });
 
-  // Excluded animals list
-  const el2 = document.getElementById("excludedList");
-  if (excludedAnimals.length > 0) {
-    el2.innerHTML = "<div style='color:#888;font-size:13px;margin-top:10px;'>Excluded from Fetch:</div>";
-    excludedAnimals.forEach(name => {
-      const row = document.createElement("div");
-      row.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:4px;padding:6px 8px;border-radius:6px;background:#333;";
-      const n = document.createElement("span");
-      n.style.cssText = "flex:1;color:#888;";
-      n.textContent = name;
-      const btn = document.createElement("button");
-      btn.textContent = "↩ Restore";
-      btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
-      btn.onclick = () => restoreAnimal(name);
-      row.appendChild(n);
-      row.appendChild(btn);
-      el2.appendChild(row);
-    });
-  } else {
-    el2.innerHTML = "";
-  }
-
-  // Animal list
-  const al = document.getElementById("animalList");
-  al.innerHTML = "";
-  goats.forEach((g, i) => {
-    const row = document.createElement("div");
-    row.style.cssText = `display:flex;align-items:center;gap:6px;margin-bottom:2px;padding:6px 8px;border-radius:6px;background:${i % 2 === 0 ? "#2a2a2a" : "#333"};`;
-    const name = document.createElement("span");
-    name.style.flex = "1";
-    name.textContent = g;
-    const btn = document.createElement("button");
-    btn.textContent = "✕";
-    btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
-    btn.onclick = () => removeAnimal(g);
-    row.appendChild(name);
-    row.appendChild(btn);
-    al.appendChild(row);
-  });
+  // Animal list and excluded list now rendered in the Animals screen — not in Settings
 }
 
 function saveFormulas() {
@@ -1708,6 +1726,101 @@ function removeAnimal(name) {
   }
   localStorage.setItem(LS.goats, JSON.stringify(goats));
   renderSettings();
+}
+
+// ===== SHARED MODULE: animals screen =====
+function renderAnimalsScreen() {
+  const al = document.getElementById("animalsAnimalList");
+  al.innerHTML = "";
+  goats.forEach((g, i) => {
+    const row = document.createElement("div");
+    row.style.cssText = `display:flex;align-items:center;gap:6px;margin-bottom:2px;padding:6px 8px;border-radius:6px;background:${i % 2 === 0 ? "#2a2a2a" : "#333"};`;
+    const name = document.createElement("span");
+    name.style.flex = "1";
+    name.textContent = g;
+    const btn = document.createElement("button");
+    btn.textContent = "✕";
+    btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
+    btn.onclick = () => { removeAnimal(g); renderAnimalsScreen(); };
+    row.appendChild(name);
+    row.appendChild(btn);
+    al.appendChild(row);
+  });
+
+  const el = document.getElementById("animalsExcludedList");
+  el.innerHTML = "";
+  if (!excludedAnimals.length) {
+    el.innerHTML = "<div style='color:#666;font-size:14px;'>None</div>";
+    return;
+  }
+  excludedAnimals.forEach(name => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:4px;padding:6px 8px;border-radius:6px;background:#333;";
+    const n = document.createElement("span");
+    n.style.cssText = "flex:1;color:#888;";
+    n.textContent = name;
+    const btn = document.createElement("button");
+    btn.textContent = "↩ Restore";
+    btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
+    btn.onclick = () => { restoreAnimal(name); renderAnimalsScreen(); };
+    row.appendChild(n);
+    row.appendChild(btn);
+    el.appendChild(row);
+  });
+}
+
+function addAnimalFromScreen() {
+  const inp = document.getElementById("animalsNewName");
+  const name = inp.value.trim();
+  if (!name || goats.includes(name)) return;
+  goats.push(name);
+  inp.value = "";
+  localStorage.setItem(LS.goats, JSON.stringify(goats));
+  populateGoatSelect();
+  renderAnimalsScreen();
+}
+
+// ===== SHARED MODULE: logo =====
+function handleLogo(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const maxW = 200;
+      const ratio = Math.min(1, maxW / img.width);
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      const logo = canvas.toDataURL("image/png", 0.9);
+      localStorage.setItem("farmdesk_logo", logo);
+      applyLogo();
+      renderSettings();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearLogo() {
+  localStorage.removeItem("farmdesk_logo");
+  applyLogo();
+  renderSettings();
+}
+
+function applyLogo() {
+  const logo = localStorage.getItem("farmdesk_logo");
+  const el = document.getElementById("farmLogo");
+  if (el) {
+    if (logo) { el.src = logo; el.style.display = "block"; }
+    else {
+      // Restore default baked-in logo
+      el.src = el.dataset.defaultLogo || "";
+      el.style.display = el.dataset.defaultLogo ? "block" : "none";
+    }
+  }
 }
 
 function exportLogs() {
@@ -1962,6 +2075,7 @@ function applyRoleUI() {
   const managerOnly = [
     "managerOnlyFormulas",
     "managerOnlyAnimals",
+    "managerOnlyLogo",
     "managerOnlyData",
     "managerOnlyConnection",
   ];
@@ -2117,7 +2231,8 @@ function buildConfigPayload(existingUUID) {
     formulas,
     customProcs:   [...new Set(logs.filter(l=>l.type==="proc"&&l.data.proc).map(l=>l.data.proc))],
     customMethods: [...new Set(logs.filter(l=>l.type==="proc"&&l.data.method).map(l=>l.data.method))],
-    excludedAnimals
+    excludedAnimals,
+    logo: localStorage.getItem("farmdesk_logo") || null
   };
   const payload = {
     data: {
@@ -2213,6 +2328,11 @@ async function pullConfig(token) {
     localStorage.setItem(LS.goats, JSON.stringify(goats));
   }
   // Custom proc/method lists are derived from logs — no need to store separately
+  // Apply logo — only set if no local custom logo already saved (local overrides remote)
+  if (config.logo && !localStorage.getItem("farmdesk_logo")) {
+    localStorage.setItem("farmdesk_logo", config.logo);
+    applyLogo();
+  }
 }
 
 // ===== FETCH (animals + logs + config) =====
@@ -2898,7 +3018,14 @@ setTimeout(() => fetchAnimalUUIDs(true), 500);
 (function() {
   const LOGO = "data:image/png;base64,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";
   const el = document.getElementById("farmLogo");
-  if (el && LOGO) { el.src = LOGO; el.style.display = "block"; }
+  if (el && LOGO) {
+    // Store default logo so applyLogo() can restore it if user clears custom logo
+    el.dataset.defaultLogo = LOGO;
+    // Apply custom logo if set, otherwise use default
+    const custom = localStorage.getItem("farmdesk_logo");
+    el.src = custom || LOGO;
+    el.style.display = "block";
+  }
 })();
 
 // ===== SERVICE WORKER =====
