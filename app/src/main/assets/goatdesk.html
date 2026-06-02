@@ -139,7 +139,10 @@ input:focus, select:focus, textarea:focus {
     <img id="farmLogo" src="" alt="" style="height:40px;width:auto;display:none;border-radius:4px;">
     <span>🐐 Goat Desk</span>
   </div>
-  <small id="syncStatus">Offline mode</small>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+    <small id="syncStatus">Offline</small>
+    <small id="roleBadge" style="font-size:12px;font-weight:bold;"></small>
+  </div>
 </header>
 
 <!-- ===== HOME ===== -->
@@ -256,7 +259,7 @@ input:focus, select:focus, textarea:focus {
     <h3 style="margin:10px 0 6px;">⚙️ Settings</h3>
   </div>
 
-  <div class="box">
+  <div class="box" id="managerOnlyFormulas">
     <strong>Med Formulas</strong>
     <p style="color:#888;font-size:13px;">ml per lb of body weight. Round↓ sets per-med dose rounding. Save when done.</p>
     <table class="formula-table">
@@ -282,7 +285,7 @@ input:focus, select:focus, textarea:focus {
     <button onclick="saveFormulas()" style="margin-top:10px;width:100%;">💾 Save Formulas</button>
   </div>
 
-  <div class="box">
+  <div class="box" id="managerOnlyAnimals">
     <strong>Animal List</strong>
     <p style="color:#888;font-size:13px;">Add or remove animals from the selector. Removed animals won't return on Fetch.</p>
     <div id="animalList"></div>
@@ -293,7 +296,7 @@ input:focus, select:focus, textarea:focus {
     <div id="excludedList"></div>
   </div>
 
-  <div class="box">
+  <div class="box" id="managerOnlyData">
     <strong>Data</strong>
     <button class="wide secondary" onclick="exportLogs()">📤 Export Logs (JSON)</button>
     <button class="wide secondary" onclick="document.getElementById('importFile').click()" style="margin-top:8px;">📥 Import Logs (JSON)</button>
@@ -301,19 +304,28 @@ input:focus, select:focus, textarea:focus {
     <div id="importResult" style="font-size:13px;color:#888;margin-top:6px;"></div>
     <button class="wide danger" onclick="clearLogs()" style="margin-top:8px;">🗑️ Clear All Logs</button>
   </div>
-</div>
+
+  <div class="box">
+    <strong>Account</strong>
+    <div id="settingsUserInfo" style="color:#888;font-size:14px;margin-bottom:8px;"></div>
+    <button onclick="logout()" class="wide secondary">🚪 Log Out</button>
+  </div>
 
 <!-- ===== FARMOS SYNC ===== -->
 <div id="screen-sync" class="screen">
   <div class="box">
-    <button class="secondary" onclick="show('home')">← Home</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <button class="secondary" onclick="show('home')" style="margin:0;">← Home</button>
+      <span id="roleBadge" style="font-size:13px;font-weight:bold;"></span>
+    </div>
     <h3 style="margin:10px 0 6px;">🔄 FarmOS Sync</h3>
   </div>
 
-  <div class="box">
+  <div class="box" id="managerOnlyConnection">
     <strong>Connection</strong>
     <label>FarmOS URL</label>
-    <input id="farmosUrl" placeholder="https://yourfarm.farmos.net" type="url">
+    <input id="farmosUrl" placeholder="https://yourfarm.farmos.net" type="url" list="recentUrlList">
+    <datalist id="recentUrlList"></datalist>
     <label>Username</label>
     <input id="farmosUser" placeholder="farmOS username" autocomplete="username">
     <label>Password</label>
@@ -328,15 +340,69 @@ input:focus, select:focus, textarea:focus {
     <div id="farmosTestResult" style="margin-top:8px;font-size:13px;color:#888;"></div>
   </div>
 
+  <!-- Worker connection info — read only, fetch only -->
+  <div class="box" id="workerConnection" style="display:none;">
+    <strong>Connection</strong>
+    <div id="workerFarmInfo" style="color:#888;font-size:14px;margin:8px 0;"></div>
+    <button onclick="fetchAnimalUUIDs()" style="width:100%;margin:0;">🔄 Fetch Logs</button>
+    <div id="farmosTestResult2" style="margin-top:8px;font-size:13px;color:#888;"></div>
+  </div>
+
   <div class="box">
     <strong>Sync</strong>
     <p style="color:#888;font-size:13px;">Unsynced local logs: <span id="unsyncedCount">0</span></p>
     <button onclick="syncToFarmOS()" style="width:100%;">⬆️ Push to FarmOS</button>
     <div id="syncLog" style="margin-top:10px;font-size:13px;color:#888;max-height:200px;overflow-y:auto;white-space:pre-wrap;"></div>
   </div>
+
+  <div class="box">
+    <button onclick="logout()" class="wide secondary">🚪 Log Out</button>
+  </div>
 </div>
 
 <script>
+// ===== SHARED MODULE: localStorage keys (farmdesk_ prefix for universal app compatibility) =====
+const LS = {
+  goats:          "farmdesk_goats",
+  excluded:       "farmdesk_excludedAnimals",
+  logs:           "farmdesk_logs",
+  weights:        "farmdesk_weights",
+  lastMed:        "farmdesk_lastMed",
+  lastRoute:      "farmdesk_lastRoute",
+  formulas:       "farmdesk_formulas",
+  cfg:            "farmdesk_cfg",
+  animalUUIDs:    "farmdesk_animalUUIDs",
+  configLogUUID:  "farmdesk_configLogUUID",
+  lastSync:       "farmdesk_lastSync",
+  role:           "farmdesk_role",
+  recentUrls:     "farmdesk_recentUrls",
+  // Per-URL log storage — key is farmdesk_logs_<urlhash>
+  logsForUrl: (url) => "farmdesk_logs_" + btoa(url).replace(/[^a-z0-9]/gi,"").slice(0,20),
+};
+
+// ===== MIGRATION: move old keys to farmdesk_ prefix (one-time, safe to run every startup) =====
+(function migrateLocalStorage() {
+  const oldToNew = {
+    "goats":         LS.goats,
+    "excludedAnimals": LS.excluded,
+    "logs":          LS.logs,
+    "weights":       LS.weights,
+    "lastMed":       LS.lastMed,
+    "lastRoute":     LS.lastRoute,
+    "formulas":      LS.formulas,
+    "farmosCfg":     LS.cfg,
+    "animalUUIDs":   LS.animalUUIDs,
+    "configLogUUID": LS.configLogUUID,
+    "lastSync":      LS.lastSync,
+  };
+  Object.entries(oldToNew).forEach(([oldKey, newKey]) => {
+    if (localStorage.getItem(oldKey) !== null && localStorage.getItem(newKey) === null) {
+      localStorage.setItem(newKey, localStorage.getItem(oldKey));
+      localStorage.removeItem(oldKey);
+    }
+  });
+})();
+
 // ===== ANIMALS =====
 const DEFAULT_ANIMALS = [
   "Athena","Blues","Brain","Bucko","BuckWheat",
@@ -346,15 +412,15 @@ const DEFAULT_ANIMALS = [
   "Tubbo","Vincent Van Goat"
 ];
 
-let goats = JSON.parse(localStorage.getItem("goats") || "null") || [...DEFAULT_ANIMALS];
-let excludedAnimals = JSON.parse(localStorage.getItem("excludedAnimals") || "[]");
-let logs  = JSON.parse(localStorage.getItem("logs")  || "[]");
-let weights = JSON.parse(localStorage.getItem("weights") || "{}");
+let goats = JSON.parse(localStorage.getItem(LS.goats) || "null") || [...DEFAULT_ANIMALS];
+let excludedAnimals = JSON.parse(localStorage.getItem(LS.excluded) || "[]");
+let logs  = JSON.parse(localStorage.getItem(LS.logs)  || "[]");
+let weights = JSON.parse(localStorage.getItem(LS.weights) || "{}");
 
-let lastMed   = localStorage.getItem("lastMed")   || "";
-let lastRoute = localStorage.getItem("lastRoute") || "Oral";
+let lastMed   = localStorage.getItem(LS.lastMed)   || "";
+let lastRoute = localStorage.getItem(LS.lastRoute) || "Oral";
 
-let formulas = JSON.parse(localStorage.getItem("formulas") || "null") || {
+let formulas = JSON.parse(localStorage.getItem(LS.formulas) || "null") || {
   "Bactrim DS":      { dose: 0.04,  unit: "ml",  route: "Oral",    round: "none", fixed: false },
   "CD&T":            { dose: 2.0,   unit: "ml",  route: "SQ",      round: "none", fixed: true  },
   "Corid":           { dose: 1.2,   unit: "ml",  route: "Oral",    round: "none", fixed: false },
@@ -364,7 +430,10 @@ let formulas = JSON.parse(localStorage.getItem("formulas") || "null") || {
   "UltraBoss":       { dose: 0.03,  unit: "ml",  route: "Topical", round: "none", fixed: false }
 };
 
-// ===== ANDROID BACK BUTTON =====
+// ===== ROLE & SESSION =====
+// ===== SHARED MODULE: role detection — manager vs worker =====
+let currentRole = localStorage.getItem(LS.role) || "worker"; // default to worker if unknown
+let sessionDoseRate = null; // ml/lb — persists through med flow, null = use formula default
 window.addEventListener("popstate", () => {
   const active = document.querySelector(".screen.active");
   if (active && active.id !== "screen-home") {
@@ -379,6 +448,8 @@ function show(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById("screen-"+id).classList.add("active");
   if (id !== "home") history.pushState({ page: id }, "");
+  // Reset session dose rate when leaving entry screen
+  if (id !== "entry") sessionDoseRate = null;
   if (id === "home") { renderRecent(); }
   if (id === "history") { renderHistory(); }
   if (id === "settings") { renderSettings(); }
@@ -546,9 +617,15 @@ function renderStep() {
     const activeFormula = formulas[activeMed] || {};
     const isFixed = activeFormula.fixed || false;
     const unit = activeFormula.unit || "ml";
+    // Use session rate if set, else formula default
+    const effectiveRate = (!isFixed && sessionDoseRate !== null) ? sessionDoseRate : (activeFormula.dose || 0);
     const firstDose = isFixed
       ? activeFormula.dose || ""
-      : (w && activeFormula.dose) ? (w * activeFormula.dose).toFixed(2) : "";
+      : (w && effectiveRate) ? (w * effectiveRate).toFixed(2) : "";
+
+    const sessionRateDisplay = (!isFixed && sessionDoseRate !== null)
+      ? `<span style="color:#c90;font-size:13px;">⚡ Session rate: ${sessionDoseRate} ml/lb</span>`
+      : "";
 
     box.innerHTML = `
       <label>Medication</label>
@@ -560,12 +637,33 @@ function renderStep() {
       </div>
 
       <div class="dose-display" id="doseDisplay">${firstDose ? firstDose + " " + unit : "enter weight"}</div>
-
-      <label>Dose — auto-calculated, editable</label>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <input id="f_dose" type="number" step="0.01" value="${firstDose}" placeholder="amount" style="flex:1;margin-top:0;">
-        <button id="resetDoseBtn" style="display:none;margin:0;padding:10px 12px;font-size:14px;background:#555;white-space:nowrap;">↺ Auto</button>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+        ${sessionRateDisplay}
+        <button id="customRateBtn" type="button" onclick="toggleRateDrawer()"
+          style="margin:0;padding:6px 12px;font-size:13px;background:#555;border-radius:6px;${isFixed?"display:none;":""}">
+          ${sessionDoseRate !== null ? "⚡ Rate" : "⚙️ Custom $/lb"}
+        </button>
+        <button id="resetRateBtn" type="button" onclick="clearSessionRate()"
+          style="display:${sessionDoseRate !== null ? "inline-block" : "none"};margin:0;padding:6px 10px;font-size:13px;background:#444;border-radius:6px;">
+          ↺ Formula
+        </button>
       </div>
+
+      <!-- Custom rate drawer — hidden by default -->
+      <div id="rateDrawer" style="display:none;background:#1a2a1a;border:1px solid #3a7;border-radius:8px;padding:12px;margin-top:8px;">
+        <div style="font-size:14px;color:#aaa;margin-bottom:8px;">
+          Standard: <strong style="color:#eee;">${activeFormula.dose || "—"} ml/lb</strong>
+        </div>
+        <label style="margin-top:0;">Session rate (ml/lb)</label>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <input id="f_rateinput" type="number" step="0.001" value="${sessionDoseRate !== null ? sessionDoseRate : ""}"
+            placeholder="${activeFormula.dose || "ml/lb"}" style="flex:1;margin-top:0;">
+          <button type="button" onclick="applySessionRate()" style="margin:0;padding:10px 14px;font-size:14px;">Apply</button>
+        </div>
+        <div style="color:#666;font-size:12px;margin-top:6px;">Changes dose for all animals this session only</div>
+      </div>
+
+      <input id="f_dose" type="hidden" value="${firstDose}">
 
       <label>Route</label>
       <select id="f_route">
@@ -593,11 +691,17 @@ function renderStep() {
     }
 
     document.getElementById("f_med").onchange = () => {
-      calcDose();
-      // Update route to match per-med default
       const selectedMed = document.getElementById("f_med").value;
       const medRoute = formulas[selectedMed]?.route || lastRoute;
       document.getElementById("f_route").value = medRoute;
+      if (formulas[selectedMed]?.fixed) {
+        sessionDoseRate = null;
+        const drawer = document.getElementById("rateDrawer");
+        if (drawer) drawer.style.display = "none";
+        const customBtn = document.getElementById("customRateBtn");
+        if (customBtn) customBtn.style.display = "none";
+      }
+      calcDose();
     };
     document.getElementById("f_medweight").oninput = calcDose;
     document.getElementById("f_followup").onchange = () => {
@@ -605,25 +709,9 @@ function renderStep() {
       document.getElementById("f_followup_date").style.display = v === "custom" ? "block" : "none";
     };
 
-    let doseManual = false;
-    document.getElementById("f_dose").oninput = () => {
-      doseManual = true;
-      const u = formulas[document.getElementById("f_med").value]?.unit || "ml";
-      document.getElementById("doseDisplay").textContent =
-        document.getElementById("f_dose").value + " " + u + " (manual)";
-      document.getElementById("resetDoseBtn").style.display = "inline-block";
-    };
-    document.getElementById("resetDoseBtn").onclick = () => {
-      doseManual = false;
-      document.getElementById("resetDoseBtn").style.display = "none";
-      calcDose();
-    };
-
-    // Use onkeydown (not addEventListener) so it never stacks across animals
     document.getElementById("f_med").onkeydown = e => {
       if (renderLock) { e.preventDefault(); return; }
       if (e.key === "Enter") { e.preventDefault(); nextAction(); }
-      if (e.key === "Tab")   { e.preventDefault(); document.getElementById("f_dose").focus(); document.getElementById("f_dose").select(); }
     };
   }
 
@@ -640,6 +728,14 @@ function renderStep() {
       </select>
       <label>Notes</label>
       <input id="f_hoofnotes" placeholder="Optional notes">
+
+      <label>Photo</label>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button type="button" onclick="document.getElementById('f_hoofphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      </div>
+      <input type="file" id="f_hoofphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <div id="photoPreview" style="margin-top:8px;"></div>
 
       <label>Schedule Follow-up</label>
       <select id="f_followup">
@@ -676,6 +772,14 @@ function renderStep() {
         <option>High</option>
         <option>Urgent</option>
       </select>
+
+      <label>Photo</label>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button type="button" onclick="document.getElementById('f_obsphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      </div>
+      <input type="file" id="f_obsphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <div id="photoPreview" style="margin-top:8px;"></div>
 
       <label>Schedule Follow-up</label>
       <select id="f_followup">
@@ -719,6 +823,14 @@ function renderStep() {
 
       <label>Notes</label>
       <textarea id="f_birthnotes" rows="2" placeholder="Optional notes"></textarea>
+
+      <label>Photo</label>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button type="button" onclick="document.getElementById('f_birthphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      </div>
+      <input type="file" id="f_birthphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <div id="photoPreview" style="margin-top:8px;"></div>
     `;
   }
 
@@ -846,6 +958,46 @@ function clearPhoto() {
   if (input) input.value = "";
 }
 
+function toggleRateDrawer() {
+  const drawer = document.getElementById("rateDrawer");
+  if (!drawer) return;
+  drawer.style.display = drawer.style.display === "none" ? "block" : "none";
+  if (drawer.style.display === "block") {
+    setTimeout(() => document.getElementById("f_rateinput")?.focus(), 50);
+  }
+}
+
+function applySessionRate() {
+  const rateEl = document.getElementById("f_rateinput");
+  const rate = parseFloat(rateEl?.value);
+  if (!isNaN(rate) && rate > 0) {
+    sessionDoseRate = rate;
+    calcDose();
+    // Update button labels
+    const customBtn = document.getElementById("customRateBtn");
+    if (customBtn) customBtn.textContent = "⚡ Rate";
+    const resetBtn = document.getElementById("resetRateBtn");
+    if (resetBtn) resetBtn.style.display = "inline-block";
+    // Close drawer
+    const drawer = document.getElementById("rateDrawer");
+    if (drawer) drawer.style.display = "none";
+  }
+}
+
+function clearSessionRate() {
+  sessionDoseRate = null;
+  const med = document.getElementById("f_med")?.value;
+  const rateEl = document.getElementById("f_rateinput");
+  if (rateEl && med && formulas[med]) rateEl.value = "";
+  const resetBtn = document.getElementById("resetRateBtn");
+  if (resetBtn) resetBtn.style.display = "none";
+  const customBtn = document.getElementById("customRateBtn");
+  if (customBtn) customBtn.textContent = "⚙️ Custom $/lb";
+  const drawer = document.getElementById("rateDrawer");
+  if (drawer) drawer.style.display = "none";
+  calcDose();
+}
+
 function calcDose() {
   const med = document.getElementById("f_med")?.value;
   const w = parseFloat(document.getElementById("f_medweight")?.value) || 0;
@@ -853,20 +1005,20 @@ function calcDose() {
   if (!f) return;
 
   const unit = f.unit || "ml";
-  const displayEl = document.getElementById("doseDisplay");
   const doseEl = document.getElementById("f_dose");
+  const doseDisplay = document.getElementById("doseDisplay");
   const weightRow = document.getElementById("weightRow");
 
+  const rate = (!f.fixed && sessionDoseRate !== null) ? sessionDoseRate : f.dose;
+
   if (f.fixed) {
-    // Fixed dose — hide weight row, use fixed dose value directly
     if (weightRow) weightRow.style.display = "none";
     if (doseEl) doseEl.value = f.dose;
-    if (displayEl) displayEl.textContent = f.dose + " " + unit;
+    if (doseDisplay) doseDisplay.textContent = f.dose + " " + unit;
   } else {
-    // Weight-based dose
     if (weightRow) weightRow.style.display = "";
-    if (w) {
-      let d = w * f.dose;
+    if (w && rate) {
+      let d = w * rate;
       const r = f.round || "none";
       if (r !== "none") {
         const rv = parseFloat(r);
@@ -874,9 +1026,9 @@ function calcDose() {
       }
       const display = d.toFixed(2);
       if (doseEl) doseEl.value = display;
-      if (displayEl) displayEl.textContent = display + " " + unit;
+      if (doseDisplay) doseDisplay.textContent = display + " " + unit;
     } else {
-      if (displayEl) displayEl.textContent = "enter weight";
+      if (doseDisplay) doseDisplay.textContent = "enter weight";
     }
   }
 }
@@ -939,16 +1091,14 @@ document.addEventListener("keydown", e => {
 // ===== FOLLOW-UP TASK =====
 function saveFollowup(g, t, baseData) {
   const followupEl = document.getElementById("f_followup");
-  if (!followupEl || !followupEl.value) return;
+  if (!followupEl || !followupEl.value) return null;
 
-  const days = followupEl.value === "custom"
-    ? null
-    : parseInt(followupEl.value);
+  const days = followupEl.value === "custom" ? null : parseInt(followupEl.value);
 
   let followupDate;
   if (followupEl.value === "custom") {
     const dateEl = document.getElementById("f_followup_date");
-    if (!dateEl || !dateEl.value) return;
+    if (!dateEl || !dateEl.value) return null;
     followupDate = new Date(dateEl.value).toISOString();
   } else {
     const d = new Date();
@@ -959,19 +1109,36 @@ function saveFollowup(g, t, baseData) {
   const noteEl = document.getElementById("f_followup_note");
   const note = noteEl?.value || "";
 
+  // Build reference notation if original log info is available
+  let refNote = "";
+  if (baseData.refId) {
+    const refDate = baseData.refTime ? new Date(baseData.refTime).toLocaleDateString() : "";
+    const refBy = baseData.refLoggedBy ? " — " + baseData.refLoggedBy : "";
+    const refDesc = baseData.med
+      ? `${baseData.med} ${baseData.dose || ""} ${baseData.unit || ""}`.trim()
+      : (baseData.state || t);
+    refNote = `Ref: ${refDesc}${refBy}${refDate ? " — " + refDate : ""}`;
+  }
+
+  const taskNote = [
+    note || ("Follow-up: " + (baseData.med || baseData.state || t)),
+    refNote
+  ].filter(Boolean).join("\n");
+
   const task = {
     id: Date.now() + "fu" + Math.random().toString(36).slice(2),
     goat: g,
     type: t,
     time: followupDate,
-    data: { ...baseData, notes: note || ("Follow-up: " + (baseData.med || baseData.state || t)) },
+    data: { ...baseData, notes: taskNote },
     synced: false,
-    loggedBy: JSON.parse(localStorage.getItem("farmosCfg") || "{}").user || "",
+    loggedBy: JSON.parse(localStorage.getItem(LS.cfg) || "{}").user || "",
     status: "pending"
   };
 
   logs.push(task);
-  localStorage.setItem("logs", JSON.stringify(logs));
+  localStorage.setItem(LS.logs, JSON.stringify(logs));
+  return task;
 }
 
 // ===== SAVE =====
@@ -980,16 +1147,17 @@ function saveStep() {
   const t = flow[step];
   const ts = getTimestamp();
 
-  const cfg = JSON.parse(localStorage.getItem("farmosCfg") || "{}");
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   const entry = { id: Date.now() + Math.random().toString(36).slice(2), goat: g, type: t, time: ts, data: {}, synced: false, loggedBy: cfg.user || "" };
 
   if (t === "weight") {
     const wEl = document.getElementById("f_weight");
-    const w = parseFloat(wEl?.dataset.parsed || wEl?.value);
-    if (isNaN(w)) return false;
+    if (!wEl) return false; // guard: weight field must exist in current form
+    const w = parseFloat(wEl.dataset.parsed || wEl.value);
+    if (isNaN(w) || w <= 0) return false;
     entry.data.weight = w;
     weights[g] = w;
-    localStorage.setItem("weights", JSON.stringify(weights));
+    localStorage.setItem(LS.weights, JSON.stringify(weights));
   }
 
   if (t === "vitals") {
@@ -1005,34 +1173,91 @@ function saveStep() {
 
   if (t === "med") {
     const medName = document.getElementById("f_med")?.value || "";
+    const dose = parseFloat(document.getElementById("f_dose")?.value) || 0;
+    const w = parseFloat(document.getElementById("f_medweight")?.value) || 0;
+    const f = formulas[medName] || {};
+    const unit = f.unit || "ml";
+    const userNotes = document.getElementById("f_mednotes")?.value || "";
+
+    // Build dose calculation note
+    let doseNote = "";
+    if (f.fixed) {
+      doseNote = `Dose: ${dose} ${unit} (fixed)`;
+    } else if (w && f.dose) {
+      if (sessionDoseRate !== null && sessionDoseRate !== f.dose) {
+        doseNote = `Dose: ${dose} ${unit} (custom rate: ${sessionDoseRate} ml/lb × ${w} lbs, standard: ${f.dose} ml/lb)`;
+      } else {
+        doseNote = `Dose: ${dose} ${unit} (${f.dose} ml/lb × ${w} lbs)`;
+      }
+    } else {
+      doseNote = `Dose: ${dose} ${unit}`;
+    }
+
+    // Follow-up note appended if scheduled
+    const followupEl = document.getElementById("f_followup");
+    let followupNote = "";
+    if (followupEl && followupEl.value) {
+      const fuNoteEl = document.getElementById("f_followup_note");
+      const fuNote = fuNoteEl?.value || "";
+      let fuDate = "";
+      if (followupEl.value === "custom") {
+        const dateEl = document.getElementById("f_followup_date");
+        if (dateEl && dateEl.value) fuDate = new Date(dateEl.value).toLocaleDateString();
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() + parseInt(followupEl.value));
+        fuDate = d.toLocaleDateString();
+      }
+      followupNote = `Follow-up: ${fuDate}${fuNote ? " — " + fuNote : ""}`;
+    }
+
+    // Compose notes: dose note first, then user notes, then follow-up
+    const parts = [doseNote];
+    if (userNotes) parts.push(userNotes);
+    if (followupNote) parts.push(followupNote);
+
     entry.data = {
       med:    medName,
-      dose:   parseFloat(document.getElementById("f_dose")?.value)  || 0,
-      unit:   formulas[medName]?.unit || "ml",
+      dose,
+      unit,
       route:  document.getElementById("f_route")?.value || "Oral",
-      weight: parseFloat(document.getElementById("f_medweight")?.value) || 0,
-      notes:  document.getElementById("f_mednotes")?.value || ""
+      weight: w,
+      notes:  parts.join("\n"),
+      sessionRate: sessionDoseRate
     };
     lastMed   = entry.data.med;
     lastRoute = entry.data.route;
-    localStorage.setItem("lastMed",   lastMed);
-    localStorage.setItem("lastRoute", lastRoute);
-    saveFollowup(g, "med", { med: entry.data.med, dose: entry.data.dose, unit: entry.data.unit, route: entry.data.route });
+    localStorage.setItem(LS.lastMed,   lastMed);
+    localStorage.setItem(LS.lastRoute, lastRoute);
+    // Save follow-up task with reference to this log
+    saveFollowup(g, "med", {
+      med: entry.data.med,
+      dose: entry.data.dose,
+      unit: entry.data.unit,
+      route: entry.data.route,
+      refId: entry.id,
+      refTime: ts,
+      refLoggedBy: entry.loggedBy
+    });
   }
 
   if (t === "hoof") {
     entry.data = {
       state: document.getElementById("f_hoof")?.value || "Good",
-      notes: document.getElementById("f_hoofnotes")?.value || ""
+      notes: document.getElementById("f_hoofnotes")?.value || "",
+      photo: currentPhoto || null
     };
-    saveFollowup(g, "hoof", { state: entry.data.state });
+    currentPhoto = null;
+    saveFollowup(g, "hoof", { state: entry.data.state, notes: entry.data.notes });
   }
 
   if (t === "obs") {
     entry.data = {
-      note: document.getElementById("f_obs")?.value || "",
-      sev:  document.getElementById("f_sev")?.value || "Low"
+      note:  document.getElementById("f_obs")?.value || "",
+      sev:   document.getElementById("f_sev")?.value || "Low",
+      photo: currentPhoto || null
     };
+    currentPhoto = null;
     saveFollowup(g, "obs", { note: entry.data.note, sev: entry.data.sev });
   }
 
@@ -1041,8 +1266,10 @@ function saveStep() {
       kids:  document.getElementById("f_kids")?.value || "",
       dam:   document.getElementById("f_dam")?.value || "",
       type:  document.getElementById("f_birthtype")?.value || "Natural",
-      notes: document.getElementById("f_birthnotes")?.value || ""
+      notes: document.getElementById("f_birthnotes")?.value || "",
+      photo: currentPhoto || null
     };
+    currentPhoto = null;
   }
 
   if (t === "activity") {
@@ -1064,7 +1291,7 @@ function saveStep() {
   }
 
   logs.push(entry);
-  localStorage.setItem("logs", JSON.stringify(logs));
+  localStorage.setItem(LS.logs, JSON.stringify(logs));
   return true;
 }
 
@@ -1196,7 +1423,7 @@ function completeTask(id) {
   l.status = "done";
   l.time = new Date().toISOString();
   l.synced = false;
-  localStorage.setItem("logs", JSON.stringify(logs));
+  localStorage.setItem(LS.logs, JSON.stringify(logs));
   renderPending();
   renderRecent();
   renderHistory();
@@ -1276,6 +1503,10 @@ document.getElementById("sortOrder").onchange = renderHistory;
 
 // ===== SETTINGS =====
 function renderSettings() {
+  applyRoleUI();
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  const userInfo = document.getElementById("settingsUserInfo");
+  if (userInfo) userInfo.textContent = cfg.user ? `Logged in as: ${cfg.user} (${currentRole})` : "Not logged in";
   // Formulas table
   const tbody = document.getElementById("formulaRows");
   tbody.innerHTML = "";
@@ -1424,7 +1655,7 @@ function saveFormulas() {
     const med = chk.getAttribute("data-med");
     if (formulas[med]) formulas[med].fixed = chk.checked;
   });
-  localStorage.setItem("formulas", JSON.stringify(formulas));
+  localStorage.setItem(LS.formulas, JSON.stringify(formulas));
   const btn = document.querySelector("#screen-settings button[onclick='saveFormulas()']");
   if (btn) { const orig = btn.textContent; btn.textContent = "✅ Saved"; setTimeout(() => btn.textContent = orig, 1500); }
 }
@@ -1436,13 +1667,13 @@ function addFormula() {
   formulas[name] = { dose, unit: "ml", route: "Oral", round: "none", fixed: false };
   document.getElementById("newMedName").value = "";
   document.getElementById("newMedDose").value = "";
-  localStorage.setItem("formulas", JSON.stringify(formulas));
+  localStorage.setItem(LS.formulas, JSON.stringify(formulas));
   renderSettings();
 }
 
 function deleteFormula(name) {
   delete formulas[name];
-  localStorage.setItem("formulas", JSON.stringify(formulas));
+  localStorage.setItem(LS.formulas, JSON.stringify(formulas));
   renderSettings();
 }
 
@@ -1451,17 +1682,17 @@ function addAnimal() {
   if (!name || goats.includes(name)) return;
   goats.push(name);
   document.getElementById("newAnimalName").value = "";
-  localStorage.setItem("goats", JSON.stringify(goats));
+  localStorage.setItem(LS.goats, JSON.stringify(goats));
   renderSettings();
 }
 
 function restoreAnimal(name) {
   excludedAnimals = excludedAnimals.filter(n => n !== name);
-  localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
+  localStorage.setItem(LS.excluded, JSON.stringify(excludedAnimals));
   if (!goats.includes(name)) {
     goats.push(name);
     goats.sort();
-    localStorage.setItem("goats", JSON.stringify(goats));
+    localStorage.setItem(LS.goats, JSON.stringify(goats));
   }
   renderSettings();
 }
@@ -1471,9 +1702,9 @@ function removeAnimal(name) {
   // Add to exclusion list so Fetch Animals never re-adds it
   if (!excludedAnimals.includes(name)) {
     excludedAnimals.push(name);
-    localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
+    localStorage.setItem(LS.excluded, JSON.stringify(excludedAnimals));
   }
-  localStorage.setItem("goats", JSON.stringify(goats));
+  localStorage.setItem(LS.goats, JSON.stringify(goats));
   renderSettings();
 }
 
@@ -1501,7 +1732,7 @@ function importLogs(input) {
         if (!l.id) l.id = Date.now() + Math.random().toString(36).slice(2);
         if (!existingIds.has(l.id)) { logs.push(l); added++; }
       });
-      localStorage.setItem("logs", JSON.stringify(logs));
+      localStorage.setItem(LS.logs, JSON.stringify(logs));
       document.getElementById("importResult").textContent = `✅ Imported ${added} logs (${imported.length - added} duplicates skipped)`;
       document.getElementById("importResult").style.color = "#3a7";
       renderRecent();
@@ -1515,26 +1746,34 @@ function importLogs(input) {
 }
 
 function clearLogs() {
+  // ===== SHARED MODULE: clearLogs — clears all logs including pending tasks =====
   const modal  = document.getElementById("editModal");
   const fields = document.getElementById("editFields");
   const saveBtn = document.getElementById("modalSaveBtn");
+  const pendingCount = logs.filter(l => l.status === "pending").length;
+  const totalCount = logs.length;
   document.getElementById("editTitle").textContent = "Clear ALL logs?";
-  fields.innerHTML = `<p style="color:#c66;">Every log entry will be deleted. This cannot be undone.</p>`;
+  fields.innerHTML = `
+    <p style="color:#c66;">All ${totalCount} log entries will be deleted${pendingCount > 0 ? `, including ${pendingCount} scheduled task${pendingCount > 1 ? "s" : ""}` : ""}.</p>
+    <p style="color:#c66;">This cannot be undone.</p>
+  `;
   saveBtn.textContent = "🗑️ Confirm Clear All";
   saveBtn.style.background = "#8b0000";
   saveBtn.onclick = () => {
-    logs = [];
-    localStorage.setItem("logs", JSON.stringify(logs));
+    logs = []; // clears everything including pending tasks
+    localStorage.setItem(LS.logs, JSON.stringify(logs));
     saveBtn.textContent = "💾 Save";
     saveBtn.style.background = "";
     saveBtn.onclick = saveEdit;
     closeEdit();
     renderSettings();
+    renderRecent();
   };
   modal.style.display = "block";
 }
 
 // ===== FARMOS SYNC =====
+// ===== SHARED MODULE: farmOS sync — log type mapping, push/pull, config sync =====
 
 // farmOS log type mapping — matches your existing records
 const FARMOS_TYPE_MAP = {
@@ -1562,7 +1801,7 @@ function farmosLogName(l) {
 }
 
 // Animal UUID cache — populated by fetchAnimalUUIDs()
-let animalUUIDs = JSON.parse(localStorage.getItem("animalUUIDs") || "{}");
+let animalUUIDs = JSON.parse(localStorage.getItem(LS.animalUUIDs) || "{}");
 
 function togglePass() {
   const p = document.getElementById("farmosPass");
@@ -1577,66 +1816,250 @@ function togglePass() {
 }
 
 function renderSync() {
-  const cfg = JSON.parse(localStorage.getItem("farmosCfg") || "{}");
-  if (cfg.url)  document.getElementById("farmosUrl").value  = cfg.url;
-  if (cfg.user) document.getElementById("farmosUser").value = cfg.user;
-  if (cfg.pass) document.getElementById("farmosPass").value = cfg.pass;
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  const isManager = currentRole === "manager";
+
+  // Show/hide connection boxes based on role
+  const managerConn = document.getElementById("managerOnlyConnection");
+  const workerConn = document.getElementById("workerConnection");
+  if (managerConn) managerConn.style.display = isManager ? "" : "none";
+  if (workerConn) workerConn.style.display = isManager ? "none" : "";
+
+  if (isManager) {
+    if (cfg.url)  document.getElementById("farmosUrl").value  = cfg.url;
+    if (cfg.user) document.getElementById("farmosUser").value = cfg.user;
+    if (cfg.pass) document.getElementById("farmosPass").value = cfg.pass;
+    // Populate recent URLs datalist
+    const list = document.getElementById("recentUrlList");
+    if (list) {
+      list.innerHTML = getRecentUrls().map(u => `<option value="${u}">`).join("");
+    }
+  } else {
+    // Worker view — show farm info read-only
+    const info = document.getElementById("workerFarmInfo");
+    if (info) info.textContent = cfg.url ? `Connected to: ${cfg.url}` : "Not connected";
+  }
+
   const unsynced = logs.filter(l => !l.synced).length;
   document.getElementById("unsyncedCount").textContent = unsynced;
   document.getElementById("syncLog").textContent = "";
+
+  // Show user info in settings
+  const userInfo = document.getElementById("settingsUserInfo");
+  if (userInfo) userInfo.textContent = cfg.user ? `Logged in as: ${cfg.user} (${currentRole})` : "Not logged in";
+
+  applyRoleUI();
 }
 
 function saveFarmOSCfg() {
+  const url = document.getElementById("farmosUrl")?.value.trim().replace(/\/$/, "") || "";
   const cfg = {
-    url:  document.getElementById("farmosUrl").value.trim().replace(/\/$/, ""),
-    user: document.getElementById("farmosUser").value.trim(),
-    pass: document.getElementById("farmosPass").value
+    url,
+    user: document.getElementById("farmosUser")?.value.trim() || "",
+    pass: document.getElementById("farmosPass")?.value || ""
   };
-  localStorage.setItem("farmosCfg", JSON.stringify(cfg));
+  localStorage.setItem(LS.cfg, JSON.stringify(cfg));
+  if (url) {
+    addRecentUrl(url);
+    loadUnsyncedForUrl(url); // restore any unsynced logs for this farm
+  }
   return cfg;
 }
 
-// OAuth2 — tries local proxy first, falls back to direct farmOS if proxy unreachable
+// ===== SHARED MODULE: OAuth2 with role auto-detection =====
+// Tries farm_manager first, falls back to farm_worker
+// Stores detected role so UI adapts accordingly
 async function getToken(cfg) {
-  const body = new URLSearchParams({
-    grant_type: "password",
-    client_id:  "farm",
-    username:   cfg.user,
-    password:   cfg.pass,
-    scope:      "farm_manager"
-  });
-
-  // Try proxy first
-  try {
-    const res = await fetch("/proxy/oauth/token", {
+  const tryAuth = async (url, scope) => {
+    const body = new URLSearchParams({
+      grant_type: "password",
+      client_id:  "farm",
+      username:   cfg.user,
+      password:   cfg.pass,
+      scope
+    });
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body
     });
     if (res.ok) {
       const data = await res.json();
-      window._useProxy = true;
       return data.access_token;
     }
-  } catch(e) { /* proxy not available, try direct */ }
+    return null;
+  };
 
-  // Fall back to direct farmOS (works when Pi not reachable but internet available)
-  const res = await fetch(cfg.url + "/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error("Auth failed (" + res.status + "): " + txt.slice(0, 100));
-  }
-  window._useProxy = false;
-  const data = await res.json();
-  return data.access_token;
+  // Try proxy first for each scope
+  const proxyBase = "/proxy/oauth/token";
+  const directBase = cfg.url + "/oauth/token";
+
+  // Try manager scope via proxy
+  try {
+    const token = await tryAuth(proxyBase, "farm_manager");
+    if (token) {
+      window._useProxy = true;
+      currentRole = "manager";
+      localStorage.setItem(LS.role, "manager");
+      applyRoleUI();
+      return token;
+    }
+  } catch(e) { /* proxy not available */ }
+
+  // Try worker scope via proxy
+  try {
+    const token = await tryAuth(proxyBase, "farm_worker");
+    if (token) {
+      window._useProxy = true;
+      currentRole = "worker";
+      localStorage.setItem(LS.role, "worker");
+      applyRoleUI();
+      return token;
+    }
+  } catch(e) { /* proxy not available */ }
+
+  // Try manager scope direct
+  try {
+    const token = await tryAuth(directBase, "farm_manager");
+    if (token) {
+      window._useProxy = false;
+      currentRole = "manager";
+      localStorage.setItem(LS.role, "manager");
+      applyRoleUI();
+      return token;
+    }
+  } catch(e) { /* continue */ }
+
+  // Try worker scope direct
+  try {
+    const token = await tryAuth(directBase, "farm_worker");
+    if (token) {
+      window._useProxy = false;
+      currentRole = "worker";
+      localStorage.setItem(LS.role, "worker");
+      applyRoleUI();
+      return token;
+    }
+  } catch(e) { /* continue */ }
+
+  throw new Error("Auth failed — check credentials and URL");
 }
 
 function apiUrl(path) {
-  return window._useProxy ? "/proxy" + path : (JSON.parse(localStorage.getItem("farmosCfg") || "{}").url || "") + path;
+  return window._useProxy ? "/proxy" + path : (JSON.parse(localStorage.getItem(LS.cfg) || "{}").url || "") + path;
+}
+
+// ===== SHARED MODULE: role-based UI =====
+function applyRoleUI() {
+  const isManager = currentRole === "manager";
+  // Manager-only elements — hide for workers
+  const managerOnly = [
+    "managerOnlyFormulas",
+    "managerOnlyAnimals",
+    "managerOnlyData",
+    "managerOnlyConnection",
+  ];
+  managerOnly.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isManager ? "" : "none";
+  });
+  // Show role badge in header
+  const badge = document.getElementById("roleBadge");
+  if (badge) {
+    badge.textContent = isManager ? "Manager" : "Worker";
+    badge.style.color = isManager ? "#3a7" : "#c90";
+  }
+}
+
+// ===== SHARED MODULE: logout =====
+function logout() {
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  const url = cfg.url || "";
+  const unsyncedCount = logs.filter(l => !l.synced).length;
+
+  const modal = document.getElementById("editModal");
+  const fields = document.getElementById("editFields");
+  const saveBtn = document.getElementById("modalSaveBtn");
+
+  document.getElementById("editTitle").textContent = "Log Out?";
+  fields.innerHTML = `
+    <p style="color:#ccc;">Logged in as <strong>${cfg.user || "unknown"}</strong></p>
+    <p style="color:#ccc;">Farm: <strong>${url || "unknown"}</strong></p>
+    ${unsyncedCount > 0 ? `<p style="color:#c90;">⚠️ ${unsyncedCount} unsynced log${unsyncedCount > 1 ? "s" : ""} will be kept and available next time you log in here.</p>` : ""}
+    <p style="color:#888;font-size:14px;margin-top:8px;">Synced logs, animals, and config will be cleared. Unsynced logs are kept.</p>
+  `;
+  saveBtn.textContent = "🚪 Confirm Logout";
+  saveBtn.style.background = "#555";
+  saveBtn.onclick = () => {
+    // Save unsynced logs to per-URL storage before clearing
+    if (url) {
+      const unsynced = logs.filter(l => !l.synced);
+      if (unsynced.length > 0) {
+        localStorage.setItem(LS.logsForUrl(url), JSON.stringify(unsynced));
+      } else {
+        localStorage.removeItem(LS.logsForUrl(url));
+      }
+    }
+    // Clear farm-specific data
+    localStorage.removeItem(LS.cfg);
+    localStorage.removeItem(LS.role);
+    localStorage.removeItem(LS.logs);
+    localStorage.removeItem(LS.weights);
+    localStorage.removeItem(LS.goats);
+    localStorage.removeItem(LS.excluded);
+    localStorage.removeItem(LS.animalUUIDs);
+    localStorage.removeItem(LS.configLogUUID);
+    localStorage.removeItem(LS.lastSync);
+    // Reset in-memory state
+    logs = [];
+    weights = {};
+    goats = [...DEFAULT_ANIMALS];
+    excludedAnimals = [];
+    currentRole = "worker";
+    localStorage.setItem(LS.role, "worker");
+    saveBtn.textContent = "💾 Save";
+    saveBtn.style.background = "";
+    saveBtn.onclick = saveEdit;
+    closeEdit();
+    applyRoleUI();
+    populateGoatSelect();
+    renderRecent();
+    show("sync");
+  };
+  modal.style.display = "block";
+}
+
+// ===== SHARED MODULE: recent URLs =====
+function getRecentUrls() {
+  return JSON.parse(localStorage.getItem(LS.recentUrls) || "[]");
+}
+
+function addRecentUrl(url) {
+  if (!url) return;
+  let urls = getRecentUrls();
+  urls = [url, ...urls.filter(u => u !== url)].slice(0, 5);
+  localStorage.setItem(LS.recentUrls, JSON.stringify(urls));
+}
+
+function loadUnsyncedForUrl(url) {
+  if (!url) return;
+  const saved = localStorage.getItem(LS.logsForUrl(url));
+  if (!saved) return;
+  try {
+    const unsynced = JSON.parse(saved);
+    if (!Array.isArray(unsynced) || unsynced.length === 0) return;
+    // Merge with current logs — avoid duplicates
+    const existingIds = new Set(logs.map(l => l.id));
+    let added = 0;
+    unsynced.forEach(l => {
+      if (!existingIds.has(l.id)) { logs.push(l); added++; }
+    });
+    if (added > 0) {
+      localStorage.setItem(LS.logs, JSON.stringify(logs));
+    }
+    // Clear the per-URL stash now that it's loaded
+    localStorage.removeItem(LS.logsForUrl(url));
+  } catch(e) { /* ignore */ }
 }
 
 async function testFarmOS() {
@@ -1673,14 +2096,15 @@ async function testFarmOS() {
 // Contains: formulas, custom proc types, custom methods, goat list, excluded animals
 
 const CONFIG_LOG_NAME = "_goatdesk_config";
-let configLogUUID = localStorage.getItem("configLogUUID") || null;
+let configLogUUID = localStorage.getItem(LS.configLogUUID) || null;
 
 function buildConfigPayload(existingUUID) {
+  // ===== SHARED MODULE: config sync blob — excluded list, formulas, proc/method lists =====
+  // NOTE: active animal list is NOT stored here — derived from farmOS asset list on fetch
   const config = {
     formulas,
     customProcs:   [...new Set(logs.filter(l=>l.type==="proc"&&l.data.proc).map(l=>l.data.proc))],
     customMethods: [...new Set(logs.filter(l=>l.type==="proc"&&l.data.method).map(l=>l.data.method))],
-    goats,
     excludedAnimals
   };
   const payload = {
@@ -1716,7 +2140,7 @@ async function pushConfig(token) {
       // If 404 the config log was deleted — fall through to POST
       if (res.status === 404) {
         configLogUUID = null;
-        localStorage.removeItem("configLogUUID");
+        localStorage.removeItem(LS.configLogUUID);
       } else {
         throw new Error("Config push failed: " + res.status);
       }
@@ -1731,7 +2155,7 @@ async function pushConfig(token) {
     if (!res.ok) throw new Error("Config create failed: " + res.status);
     const data = await res.json();
     configLogUUID = data.data.id;
-    localStorage.setItem("configLogUUID", configLogUUID);
+    localStorage.setItem(LS.configLogUUID, configLogUUID);
   }
 }
 
@@ -1751,7 +2175,7 @@ async function pullConfig(token) {
   if (!record) return; // no config pushed yet — first push will create it
 
   configLogUUID = record.id;
-  localStorage.setItem("configLogUUID", configLogUUID);
+  localStorage.setItem(LS.configLogUUID, configLogUUID);
 
   let config;
   try {
@@ -1761,22 +2185,27 @@ async function pullConfig(token) {
   // Apply remote config to local
   if (config.formulas && typeof config.formulas === "object") {
     formulas = config.formulas;
-    localStorage.setItem("formulas", JSON.stringify(formulas));
+    localStorage.setItem(LS.formulas, JSON.stringify(formulas));
   }
-  if (Array.isArray(config.goats) && config.goats.length > 0) {
-    goats = config.goats;
-    localStorage.setItem("goats", JSON.stringify(goats));
-  }
+  // Animal list is NOT synced via config — derived from farmOS assets on fetch
   if (Array.isArray(config.excludedAnimals)) {
-    excludedAnimals = config.excludedAnimals;
-    localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
+    // Merge remote excluded list with local — union, never remove local exclusions
+    config.excludedAnimals.forEach(name => {
+      if (!excludedAnimals.some(e => e.toLowerCase() === name.toLowerCase())) {
+        excludedAnimals.push(name);
+      }
+    });
+    localStorage.setItem(LS.excluded, JSON.stringify(excludedAnimals));
+    // Remove any newly-excluded animals from active list
+    goats = goats.filter(g => !excludedAnimals.some(e => e.toLowerCase() === g.toLowerCase()));
+    localStorage.setItem(LS.goats, JSON.stringify(goats));
   }
   // Custom proc/method lists are derived from logs — no need to store separately
 }
 
 // ===== FETCH (animals + logs + config) =====
 async function fetchAnimalUUIDs(silent = false) {
-  const cfg = JSON.parse(localStorage.getItem("farmosCfg") || "{}");
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   if (!cfg.url || !cfg.user || !cfg.pass) {
     if (!silent) {
       const el = document.getElementById("farmosTestResult");
@@ -1785,11 +2214,12 @@ async function fetchAnimalUUIDs(silent = false) {
     return;
   }
 
-  // Save cfg to fields if on sync screen
+  // Save cfg to fields if on sync screen (manager only — worker screen has no fields)
   const urlEl = document.getElementById("farmosUrl");
   if (urlEl) saveFarmOSCfg();
 
-  const el = document.getElementById("farmosTestResult");
+  // Result element differs by role
+  const el = document.getElementById("farmosTestResult") || document.getElementById("farmosTestResult2");
 
   try {
     const token = await getToken(cfg);
@@ -1813,33 +2243,40 @@ async function fetchAnimalUUIDs(silent = false) {
     const archivedNames = [];
 
     (animalData.data || []).forEach(a => {
-      const name = a.attributes.name;
+      const name = (a.attributes.name || "").trim();
+      if (!name) return;
       if (a.attributes.status === "archived") {
-        // Track archived animals to auto-exclude
         archivedNames.push(name);
         return;
       }
       animalUUIDs[name] = a.id;
-      // Add to goat list if not already there and not excluded
-      if (!goats.includes(name) && !excludedAnimals.includes(name)) {
+      // Add to goat list only if not already present (case-insensitive check) and not excluded
+      const alreadyInList = goats.some(g => g.toLowerCase() === name.toLowerCase());
+      const isExcluded = excludedAnimals.some(e => e.toLowerCase() === name.toLowerCase());
+      if (!alreadyInList && !isExcluded) {
         goats.push(name);
       }
     });
 
     // Auto-exclude archived animals
     archivedNames.forEach(name => {
-      if (goats.includes(name)) {
-        goats = goats.filter(g => g !== name);
-      }
-      if (!excludedAnimals.includes(name)) {
-        excludedAnimals.push(name);
-      }
+      goats = goats.filter(g => g.toLowerCase() !== name.toLowerCase());
+      const alreadyExcluded = excludedAnimals.some(e => e.toLowerCase() === name.toLowerCase());
+      if (!alreadyExcluded) excludedAnimals.push(name);
     });
 
+    // Deduplicate goat list (keep first occurrence, case-insensitive)
+    const seen = new Set();
+    goats = goats.filter(g => {
+      const key = g.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     goats.sort();
-    localStorage.setItem("goats", JSON.stringify(goats));
-    localStorage.setItem("excludedAnimals", JSON.stringify(excludedAnimals));
-    localStorage.setItem("animalUUIDs", JSON.stringify(animalUUIDs));
+    localStorage.setItem(LS.goats, JSON.stringify(goats));
+    localStorage.setItem(LS.excluded, JSON.stringify(excludedAnimals));
+    localStorage.setItem(LS.animalUUIDs, JSON.stringify(animalUUIDs));
     populateGoatSelect();
 
     // ===== STEP 3: Fetch recent logs =====
@@ -1960,12 +2397,12 @@ async function fetchAnimalUUIDs(silent = false) {
       if (!existingFarmOSIds.has(l.id)) { logs.push(l); added++; }
     });
 
-    localStorage.setItem("logs", JSON.stringify(logs));
-    localStorage.setItem("weights", JSON.stringify(weights));
+    localStorage.setItem(LS.logs, JSON.stringify(logs));
+    localStorage.setItem(LS.weights, JSON.stringify(weights));
 
     // Update last sync time
     const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    localStorage.setItem("lastSync", now);
+    localStorage.setItem(LS.lastSync, now);
     const statusEl = document.getElementById("syncStatus");
     if (statusEl) statusEl.textContent = "Synced " + now;
 
@@ -2083,6 +2520,16 @@ async function syncToFarmOS() {
   const logEl = document.getElementById("syncLog");
   logEl.textContent = "Authenticating...\n";
 
+  // ===== SHARED MODULE: fetch-recency warning =====
+  const lastSyncTime = localStorage.getItem(LS.lastSync);
+  const unsyncedCheck = logs.filter(l => !l.synced);
+  if (unsyncedCheck.length > 0 && lastSyncTime) {
+    const minutesSinceSync = (Date.now() - new Date("1/1/1970 " + lastSyncTime).getTime()) / 60000;
+    if (!isNaN(minutesSinceSync) && minutesSinceSync > 60) {
+      logEl.textContent += `⚠️ Last fetch was over an hour ago. Fetching first to avoid conflicts...\n`;
+    }
+  }
+
   let token;
   try {
     token = await getToken(cfg);
@@ -2136,7 +2583,7 @@ async function syncToFarmOS() {
       }
     }
 
-    localStorage.setItem("logs", JSON.stringify(logs));
+    localStorage.setItem(LS.logs, JSON.stringify(logs));
     logEl.textContent += `\nPushed: ${ok} ok, ${fail} failed.\n`;
     document.getElementById("unsyncedCount").textContent = logs.filter(l => !l.synced).length;
   }
@@ -2175,7 +2622,7 @@ function deleteSelected() {
   saveBtn.style.background = "#8b0000";
   saveBtn.onclick = () => {
     logs = logs.filter(l => !selected.includes(l.id));
-    localStorage.setItem("logs", JSON.stringify(logs));
+    localStorage.setItem(LS.logs, JSON.stringify(logs));
     saveBtn.textContent = "💾 Save";
     saveBtn.style.background = "";
     saveBtn.onclick = saveEdit;
@@ -2224,7 +2671,7 @@ function deleteLog(id) {
   saveBtn.style.background = "#8b0000";
   saveBtn.onclick = () => {
     logs = logs.filter(x => x.id !== id);
-    localStorage.setItem("logs", JSON.stringify(logs));
+    localStorage.setItem(LS.logs, JSON.stringify(logs));
     saveBtn.textContent = "💾 Save";
     saveBtn.style.background = "";
     saveBtn.onclick = saveEdit;
@@ -2360,7 +2807,7 @@ function saveEdit() {
   if (l.type === "weight") {
     l.data.weight = parseFloat(document.getElementById("ed_weight").value) || 0;
     weights[l.goat] = l.data.weight;
-    localStorage.setItem("weights", JSON.stringify(weights));
+    localStorage.setItem(LS.weights, JSON.stringify(weights));
   }
   if (l.type === "vitals") {
     l.data.temp    = parseFloat(document.getElementById("ed_temp").value)  || null;
@@ -2400,7 +2847,7 @@ function saveEdit() {
     l.data.notes  = document.getElementById("ed_procnotes").value;
   }
 
-  localStorage.setItem("logs", JSON.stringify(logs));
+  localStorage.setItem(LS.logs, JSON.stringify(logs));
   closeEdit();
   renderHistory();
   renderRecent();
@@ -2422,12 +2869,13 @@ logs.forEach(l => {
   if (!l.time || isNaN(new Date(l.time).getTime())) l.time = new Date().toISOString();
   if (!l.data) l.data = {};
 });
-localStorage.setItem("logs", JSON.stringify(logs));
+localStorage.setItem(LS.logs, JSON.stringify(logs));
 populateGoatSelect();
 renderRecent();
+applyRoleUI();
 
 // Show last sync time in status bar
-const lastSync = localStorage.getItem("lastSync");
+const lastSync = localStorage.getItem(LS.lastSync);
 const statusEl = document.getElementById("syncStatus");
 if (statusEl) statusEl.textContent = lastSync ? "Synced " + lastSync : "Offline";
 
