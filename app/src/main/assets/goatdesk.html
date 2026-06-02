@@ -359,8 +359,8 @@ input:focus, select:focus, textarea:focus {
   <div class="box" id="managerOnlyConnection">
     <strong>Connection</strong>
     <label>FarmOS URL</label>
-    <input id="farmosUrl" placeholder="https://yourfarm.farmos.net" type="url" list="recentUrlList">
-    <datalist id="recentUrlList"></datalist>
+    <input id="farmosUrl" placeholder="https://yourfarm.farmos.net" type="url">
+    <div id="recentUrlContainer" style="margin-top:4px;"></div>
     <label>Username</label>
     <input id="farmosUser" placeholder="farmOS username" autocomplete="username">
     <label>Password</label>
@@ -441,7 +441,7 @@ const LS = {
 // ===== ANIMALS =====
 const DEFAULT_ANIMALS = [
   "Athena","Blues","Brain","Bucko","BuckWheat",
-  "Caramel Macchiato","Cricket","Galaxy","Hurbert","Jazz",
+  "Caramel Macchiato","Cricket","Galaxy","Hubert","Jazz",
   "Lace Wing","LadyBug","Lulabye","Oats","Patty",
   "Pinky","PJs","Rythum","Sooter","Stud Muffin",
   "Tubbo","Vincent Van Goat"
@@ -1908,7 +1908,7 @@ const FARMOS_TYPE_MAP = {
 
 // Generates log name in the standard format already used in your farmOS records
 function farmosLogName(l) {
-  if (l.type === "weight")  return `Weight of ${l.goat} is ${l.data.weight} lbs`;
+  if (l.type === "weight")  return "Weight";
   if (l.type === "vitals")  return `Vitals: ${l.goat}`;
   if (l.type === "med")     return `Administer ${l.data.med}`;
   if (l.type === "proc")    return l.data.proc || "Procedure";
@@ -1946,16 +1946,20 @@ function renderSync() {
   if (managerConn) managerConn.style.display = (isManager || noUrl) ? "" : "none";
   if (workerConn) workerConn.style.display = (isManager || noUrl) ? "none" : "";
 
-  if (isManager) {
+  if (isManager || noUrl) {
     if (cfg.url)  document.getElementById("farmosUrl").value  = cfg.url;
     if (cfg.user) document.getElementById("farmosUser").value = cfg.user;
     if (cfg.pass) document.getElementById("farmosPass").value = cfg.pass;
-    // Populate recent URLs datalist
-    const list = document.getElementById("recentUrlList");
-    if (list) {
-      list.innerHTML = getRecentUrls().map(u => `<option value="${u}">`).join("");
+    // Render recent URLs as list with delete buttons
+    renderRecentUrlList();
+    // Auto-fill URL field if only one saved and field is empty
+    const urls = getRecentUrls();
+    const urlEl = document.getElementById("farmosUrl");
+    if (urlEl && !cfg.url && urls.length === 1) {
+      urlEl.value = urls[0];
     }
-  } else {
+  }
+  if (!isManager && !noUrl) {
     // Worker view — show farm info read-only
     const info = document.getElementById("workerFarmInfo");
     if (info) info.textContent = cfg.url ? `Connected to: ${cfg.url}` : "Not connected";
@@ -2169,6 +2173,38 @@ function addRecentUrl(url) {
   let urls = getRecentUrls();
   urls = [url, ...urls.filter(u => u !== url)].slice(0, 5);
   localStorage.setItem(LS.recentUrls, JSON.stringify(urls));
+}
+
+function renderRecentUrlList() {
+  const container = document.getElementById("recentUrlContainer");
+  if (!container) return;
+  const urls = getRecentUrls();
+  if (!urls.length) { container.innerHTML = ""; return; }
+  container.innerHTML = "";
+  urls.forEach(url => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:4px;";
+    const btn = document.createElement("button");
+    btn.textContent = url;
+    btn.style.cssText = "flex:1;margin:0;padding:8px 10px;font-size:13px;background:#333;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    btn.onclick = () => {
+      const urlEl = document.getElementById("farmosUrl");
+      if (urlEl) urlEl.value = url;
+    };
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.style.cssText = "margin:0;padding:8px 12px;font-size:13px;background:#8b0000;flex-shrink:0;";
+    del.onclick = () => deleteRecentUrl(url);
+    row.appendChild(btn);
+    row.appendChild(del);
+    container.appendChild(row);
+  });
+}
+
+function deleteRecentUrl(url) {
+  let urls = getRecentUrls().filter(u => u !== url);
+  localStorage.setItem(LS.recentUrls, JSON.stringify(urls));
+  renderRecentUrlList();
 }
 
 function loadUnsyncedForUrl(url) {
@@ -2498,7 +2534,7 @@ async function fetchAnimalUUIDs(silent = false) {
                   }
                   return new Date().toISOString();
                 })(),
-        data:   parseFarmOSNotes(log.type, attrs.name, attrs.notes?.value || ""),
+        data:   parseFarmOSNotes(log.type, attrs.name, attrs.notes?.value || "", attrs.quantity || []),
         synced: true,
         fromFarmOS: true,
         status: attrs.status === "pending" ? "pending" : "done",
@@ -2576,15 +2612,21 @@ function mapFarmOSTypeToLocal(farmosType, logName) {
   return "obs";
 }
 
-function parseFarmOSNotes(farmosType, name, notes) {
+function parseFarmOSNotes(farmosType, name, notes, quantities) {
   const n = (name || "").trim();
   const nt = (notes || "").trim();
 
-  // Weight logs — new format "Weight of X is Y lbs" or old format "Weight" with lbs in notes
+  // Weight logs — "Weight of X is Y lbs" (old app format), "Weight" + notes "Y lbs" (farmOS format),
+  // or farmOS quantity field
   if (farmosType === "log--observation") {
     if (n.startsWith("Weight of") || n === "Weight") {
+      // Try notes text first
       const m = (n + " " + nt).match(/([\d.]+)\s*[Ll]bs/);
       if (m) return { weight: parseFloat(m[1]) };
+      // Fall back to quantity field (farmOS native format)
+      const qArr = Array.isArray(quantities) ? quantities : [];
+      const wq = qArr.find(q => (q.measure || "").toLowerCase() === "weight" || (q.label || "").toLowerCase() === "weight");
+      if (wq && wq.value) return { weight: parseFloat(wq.value) };
     }
     if (n.startsWith("Vitals:")) {
       return { note: nt, sev: "Low" };
@@ -2631,18 +2673,30 @@ function buildFarmOSPayload(l) {
   const farmosType = FARMOS_TYPE_MAP[l.type] || "activity";
   const uuid = animalUUIDs[l.goat];
 
+  const attributes = {
+    name:      farmosLogName(l),
+    timestamp: String(Math.floor((new Date(l.time).getTime() || Date.now()) / 1000)),
+    status:    l.status === "pending" ? "pending" : "done",
+    notes: {
+      value:  formatLog(l) + (l.loggedBy ? `\nLogged by: ${l.loggedBy}` : ""),
+      format: "default"
+    }
+  };
+
+  // Weight logs — add farmOS quantity field so weight appears in the Quantity column
+  if (l.type === "weight" && l.data.weight) {
+    attributes.quantity = [{
+      measure: "weight",
+      value:   String(l.data.weight),
+      units:   "lbs",
+      label:   "Weight"
+    }];
+  }
+
   const payload = {
     data: {
       type: "log--" + farmosType,
-      attributes: {
-        name:      farmosLogName(l),
-        timestamp: String(Math.floor((new Date(l.time).getTime() || Date.now()) / 1000)),
-        status:    l.status === "pending" ? "pending" : "done",
-        notes: {
-          value:  formatLog(l) + (l.loggedBy ? `\nLogged by: ${l.loggedBy}` : ""),
-          format: "default"
-        }
-      }
+      attributes
     }
   };
 
