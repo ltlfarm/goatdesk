@@ -343,7 +343,7 @@ input:focus, select:focus, textarea:focus {
     <strong>Active Animals</strong>
     <p style="color:#888;font-size:13px;">Removed animals won't return on Fetch unless restored.</p>
     <div id="animalsAnimalList"></div>
-    <div style="display:flex;gap:8px;margin-top:10px;">
+    <div id="animalsAddRow" style="display:flex;gap:8px;margin-top:10px;">
       <input id="animalsNewName" placeholder="Animal name" style="flex:1">
       <button onclick="addAnimalFromScreen()" style="margin:0;padding:10px;">Add</button>
     </div>
@@ -1012,8 +1012,11 @@ function clearPhoto() {
   if (preview) preview.innerHTML = "";
   const clearBtn = document.getElementById("clearPhotoBtn");
   if (clearBtn) clearBtn.style.display = "none";
-  const input = document.getElementById("f_procphoto");
-  if (input) input.value = "";
+  // Clear whichever photo input is present in current step
+  ["f_procphoto","f_hoofphoto","f_obsphoto","f_birthphoto"].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) input.value = "";
+  });
 }
 
 function toggleRateDrawer() {
@@ -1757,7 +1760,8 @@ function restoreAnimal(name) {
     goats.sort();
     localStorage.setItem(LS.goats, JSON.stringify(goats));
   }
-  renderSettings();
+  populateGoatSelect();
+  renderAnimalsScreen();
 }
 
 function removeAnimal(name) {
@@ -1768,25 +1772,33 @@ function removeAnimal(name) {
     localStorage.setItem(LS.excluded, JSON.stringify(excludedAnimals));
   }
   localStorage.setItem(LS.goats, JSON.stringify(goats));
-  renderSettings();
+  populateGoatSelect();
+  renderAnimalsScreen();
 }
 
 // ===== SHARED MODULE: animals screen =====
 function renderAnimalsScreen() {
+  const isManager = currentRole === "manager";
   const al = document.getElementById("animalsAnimalList");
   al.innerHTML = "";
+  // Show/hide add row based on role
+  const addRow = document.getElementById("animalsAddRow");
+  if (addRow) addRow.style.display = isManager ? "" : "none";
+
   goats.forEach((g, i) => {
     const row = document.createElement("div");
     row.style.cssText = `display:flex;align-items:center;gap:6px;margin-bottom:2px;padding:6px 8px;border-radius:6px;background:${i % 2 === 0 ? "#2a2a2a" : "#333"};`;
     const name = document.createElement("span");
     name.style.flex = "1";
     name.textContent = g;
-    const btn = document.createElement("button");
-    btn.textContent = "✕";
-    btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
-    btn.onclick = () => { removeAnimal(g); renderAnimalsScreen(); };
     row.appendChild(name);
-    row.appendChild(btn);
+    if (isManager) {
+      const btn = document.createElement("button");
+      btn.textContent = "✕";
+      btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
+      btn.onclick = () => { removeAnimal(g); renderAnimalsScreen(); };
+      row.appendChild(btn);
+    }
     al.appendChild(row);
   });
 
@@ -1802,16 +1814,17 @@ function renderAnimalsScreen() {
     const n = document.createElement("span");
     n.style.cssText = "flex:1;color:#888;";
     n.textContent = name;
-    const btn = document.createElement("button");
-    btn.textContent = "↩ Restore";
-    btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
-    btn.onclick = () => { restoreAnimal(name); renderAnimalsScreen(); };
     row.appendChild(n);
-    row.appendChild(btn);
+    if (isManager) {
+      const btn = document.createElement("button");
+      btn.textContent = "↩ Restore";
+      btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
+      btn.onclick = () => { restoreAnimal(name); renderAnimalsScreen(); };
+      row.appendChild(btn);
+    }
     el.appendChild(row);
   });
 }
-
 function addAnimalFromScreen() {
   const inp = document.getElementById("animalsNewName");
   const name = inp.value.trim();
@@ -2423,12 +2436,16 @@ async function fetchAnimalUUIDs(silent = false) {
     return;
   }
 
-  // Save cfg to fields if on sync screen (manager only — worker screen has no fields)
-  const urlEl = document.getElementById("farmosUrl");
-  if (urlEl) saveFarmOSCfg();
+  // Save cfg from fields only if manager — worker screen has no input fields
+  if (currentRole === "manager") {
+    const urlEl = document.getElementById("farmosUrl");
+    if (urlEl) saveFarmOSCfg();
+  }
 
-  // Result element differs by role
-  const el = document.getElementById("farmosTestResult") || document.getElementById("farmosTestResult2");
+  // Result element differs by role — workers use farmosTestResult2
+  const el = currentRole === "manager"
+    ? document.getElementById("farmosTestResult")
+    : document.getElementById("farmosTestResult2");
 
   try {
     const token = await getToken(cfg);
@@ -2625,9 +2642,11 @@ async function fetchAnimalUUIDs(silent = false) {
 
   } catch(e) {
     if (!silent) {
-      if (el) { el.textContent = "❌ " + e.message; el.style.color = "#c00"; }
+      const errEl = currentRole === "manager"
+        ? document.getElementById("farmosTestResult")
+        : document.getElementById("farmosTestResult2");
+      if (errEl) { errEl.textContent = "❌ " + e.message; errEl.style.color = "#c00"; }
     }
-    // Silent startup fetch — just update status bar
     if (silent) {
       const statusEl = document.getElementById("syncStatus");
       if (statusEl) statusEl.textContent = "Offline";
@@ -2738,7 +2757,8 @@ function buildFarmOSPayload(l) {
 }
 
 async function syncToFarmOS() {
-  const cfg = saveFarmOSCfg();
+  // Workers have no URL input fields — read cfg from storage directly
+  const cfg = currentRole === "manager" ? saveFarmOSCfg() : JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   const logEl = document.getElementById("syncLog");
   logEl.textContent = "Authenticating...\n";
 
@@ -2818,13 +2838,15 @@ async function syncToFarmOS() {
     document.getElementById("unsyncedCount").textContent = logs.filter(l => !l.synced).length;
   }
 
-  // ===== STEP 3: Push shared config =====
-  logEl.textContent += "Pushing config...\n";
-  try {
-    await pushConfig(token);
-    logEl.textContent += "✅ Config synced\n";
-  } catch(e) {
-    logEl.textContent += "⚠️ Config push failed: " + e.message + "\n";
+  // ===== STEP 3: Push shared config — managers only =====
+  if (currentRole === "manager") {
+    logEl.textContent += "Pushing config...\n";
+    try {
+      await pushConfig(token);
+      logEl.textContent += "✅ Config synced\n";
+    } catch(e) {
+      logEl.textContent += "⚠️ Config push failed: " + e.message + "\n";
+    }
   }
 
   logEl.scrollTop = logEl.scrollHeight;
