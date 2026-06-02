@@ -2030,9 +2030,8 @@ function saveFarmOSCfg() {
   return cfg;
 }
 
-// ===== SHARED MODULE: OAuth2 with role auto-detection =====
-// Tries farm_manager first, falls back to farm_worker
-// Stores detected role so UI adapts accordingly
+// ===== SHARED MODULE: OAuth2 with role verified from farmOS user profile =====
+// farmOS may grant manager scope to worker accounts — verify actual role via API
 async function getToken(cfg) {
   const tryAuth = async (url, scope) => {
     const body = new URLSearchParams({
@@ -2054,59 +2053,58 @@ async function getToken(cfg) {
     return null;
   };
 
-  // Try proxy first for each scope
   const proxyBase = "/proxy/oauth/token";
   const directBase = cfg.url + "/oauth/token";
 
-  // Try manager scope via proxy
-  try {
-    const token = await tryAuth(proxyBase, "farm_manager");
-    if (token) {
-      window._useProxy = true;
-      currentRole = "manager";
-      localStorage.setItem(LS.role, "manager");
-      applyRoleUI();
-      return token;
-    }
-  } catch(e) { /* proxy not available */ }
+  let token = null;
 
-  // Try worker scope via proxy
-  try {
-    const token = await tryAuth(proxyBase, "farm_worker");
-    if (token) {
-      window._useProxy = true;
-      currentRole = "worker";
-      localStorage.setItem(LS.role, "worker");
-      applyRoleUI();
-      return token;
-    }
-  } catch(e) { /* proxy not available */ }
+  // Try proxy manager, proxy worker, direct manager, direct worker — first success wins
+  const attempts = [
+    [proxyBase, "farm_manager", true],
+    [proxyBase, "farm_worker",  true],
+    [directBase, "farm_manager", false],
+    [directBase, "farm_worker",  false],
+  ];
 
-  // Try manager scope direct
-  try {
-    const token = await tryAuth(directBase, "farm_manager");
-    if (token) {
-      window._useProxy = false;
-      currentRole = "manager";
-      localStorage.setItem(LS.role, "manager");
-      applyRoleUI();
-      return token;
-    }
-  } catch(e) { /* continue */ }
+  for (const [url, scope, useProxy] of attempts) {
+    try {
+      const t = await tryAuth(url, scope);
+      if (t) {
+        token = t;
+        window._useProxy = useProxy;
+        break;
+      }
+    } catch(e) { /* try next */ }
+  }
 
-  // Try worker scope direct
-  try {
-    const token = await tryAuth(directBase, "farm_worker");
-    if (token) {
-      window._useProxy = false;
-      currentRole = "worker";
-      localStorage.setItem(LS.role, "worker");
-      applyRoleUI();
-      return token;
-    }
-  } catch(e) { /* continue */ }
+  if (!token) throw new Error("Auth failed — check credentials and URL");
 
-  throw new Error("Auth failed — check credentials and URL");
+  // ===== VERIFY ACTUAL ROLE FROM FARMOS USER PROFILE =====
+  // farmOS may accept manager scope for worker accounts — check roles directly
+  let detectedRole = "worker"; // default safe
+  try {
+    const meRes = await fetch(
+      (window._useProxy ? "/proxy" : cfg.url) + "/api/user/user?filter[name]=" + encodeURIComponent(cfg.user) + "&page[limit]=1",
+      { headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" } }
+    );
+    if (meRes.ok) {
+      const meData = await meRes.json();
+      const user = (meData.data || [])[0];
+      if (user) {
+        const roles = user.relationships?.roles?.data || [];
+        const roleNames = roles.map(r => r.id || "").join(" ").toLowerCase();
+        // Manager if they have manager role (account_admin and config_admin also count)
+        if (roleNames.includes("manager") || roleNames.includes("admin")) {
+          detectedRole = "manager";
+        }
+      }
+    }
+  } catch(e) { /* fall back to worker if check fails */ }
+
+  currentRole = detectedRole;
+  localStorage.setItem(LS.role, detectedRole);
+  applyRoleUI();
+  return token;
 }
 
 function apiUrl(path) {
