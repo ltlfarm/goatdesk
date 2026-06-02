@@ -1743,14 +1743,7 @@ function deleteFormula(name) {
   renderSettings();
 }
 
-function addAnimal() {
-  const name = document.getElementById("newAnimalName").value.trim();
-  if (!name || goats.includes(name)) return;
-  goats.push(name);
-  document.getElementById("newAnimalName").value = "";
-  localStorage.setItem(LS.goats, JSON.stringify(goats));
-  renderSettings();
-}
+
 
 function restoreAnimal(name) {
   excludedAnimals = excludedAnimals.filter(n => n !== name);
@@ -1796,7 +1789,7 @@ function renderAnimalsScreen() {
       const btn = document.createElement("button");
       btn.textContent = "✕";
       btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
-      btn.onclick = () => { removeAnimal(g); renderAnimalsScreen(); };
+      btn.onclick = () => removeAnimal(g);
       row.appendChild(btn);
     }
     al.appendChild(row);
@@ -1819,7 +1812,7 @@ function renderAnimalsScreen() {
       const btn = document.createElement("button");
       btn.textContent = "↩ Restore";
       btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
-      btn.onclick = () => { restoreAnimal(name); renderAnimalsScreen(); };
+      btn.onclick = () => restoreAnimal(name);
       row.appendChild(btn);
     }
     el.appendChild(row);
@@ -2096,20 +2089,33 @@ async function getToken(cfg) {
   // farmOS may accept manager scope for worker accounts — check roles directly
   let detectedRole = "worker"; // default safe
   try {
-    const meRes = await fetch(
-      (window._useProxy ? "/proxy" : cfg.url) + "/api/user/user?filter[name]=" + encodeURIComponent(cfg.user) + "&page[limit]=1",
+    // Try /current endpoint first — returns the authenticated user reliably
+    let user = null;
+    const base = window._useProxy ? "/proxy" : cfg.url;
+    const curRes = await fetch(base + "/api/user/user/current",
       { headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" } }
     );
-    if (meRes.ok) {
-      const meData = await meRes.json();
-      const user = (meData.data || [])[0];
-      if (user) {
-        const roles = user.relationships?.roles?.data || [];
-        const roleNames = roles.map(r => r.id || "").join(" ").toLowerCase();
-        // Manager if they have manager role (account_admin and config_admin also count)
-        if (roleNames.includes("manager") || roleNames.includes("admin")) {
-          detectedRole = "manager";
-        }
+    if (curRes.ok) {
+      const curData = await curRes.json();
+      user = curData.data || null;
+    }
+    // Fall back to filter by username if /current not available
+    if (!user) {
+      const meRes = await fetch(
+        base + "/api/user/user?filter[name]=" + encodeURIComponent(cfg.user) + "&page[limit]=1",
+        { headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" } }
+      );
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        user = (meData.data || [])[0] || null;
+      }
+    }
+    if (user) {
+      const roles = user.relationships?.roles?.data || [];
+      // farmOS role IDs are machine names: "farm_manager", "farm_worker", etc.
+      const roleIds = roles.map(r => (r.id || "").toLowerCase());
+      if (roleIds.some(id => id.includes("manager") || id.includes("admin"))) {
+        detectedRole = "manager";
       }
     }
   } catch(e) { /* fall back to worker if check fails */ }
@@ -2430,8 +2436,10 @@ async function fetchAnimalUUIDs(silent = false) {
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   if (!cfg.url || !cfg.user || !cfg.pass) {
     if (!silent) {
-      const el = document.getElementById("farmosTestResult");
-      if (el) { el.textContent = "⚠️ FarmOS not configured."; el.style.color = "#c90"; }
+      const errEl = currentRole === "manager"
+        ? document.getElementById("farmosTestResult")
+        : document.getElementById("farmosTestResult2");
+      if (errEl) { errEl.textContent = "⚠️ FarmOS not configured."; errEl.style.color = "#c90"; }
     }
     return;
   }
