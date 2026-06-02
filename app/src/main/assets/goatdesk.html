@@ -2763,15 +2763,23 @@ async function syncToFarmOS() {
     return;
   }
 
-  // ===== STEP 1: Fetch first to pull remote changes before pushing =====
-  logEl.textContent += "Fetching remote changes first...\n";
+  // ===== STEP 1: Refresh animal UUIDs only — no config pull, no animal list changes =====
+  // Push must NOT run pullConfig or rebuild the animal list — that belongs to Fetch only
   try {
-    await fetchAnimalUUIDs(true); // silent fetch
-    logEl.textContent += "✅ Remote fetch complete\n";
-  } catch(e) {
-    logEl.textContent += "⚠️ Fetch skipped: " + e.message + "\n";
-    // Continue anyway — don't block push if fetch fails
-  }
+    const uuidRes = await fetch(apiUrl("/api/asset/animal?page[limit]=100"), {
+      headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" }
+    });
+    if (uuidRes.ok) {
+      const uuidData = await uuidRes.json();
+      (uuidData.data || []).forEach(a => {
+        const name = (a.attributes.name || "").trim();
+        if (name && a.attributes.status !== "archived") {
+          animalUUIDs[name] = a.id;
+        }
+      });
+      localStorage.setItem(LS.animalUUIDs, JSON.stringify(animalUUIDs));
+    }
+  } catch(e) { /* continue — UUIDs from last fetch will be used */ }
 
   // ===== STEP 2: Push unsynced logs =====
   const unsynced = logs.filter(l => !l.synced);
