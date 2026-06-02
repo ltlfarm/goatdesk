@@ -2085,40 +2085,37 @@ async function getToken(cfg) {
 
   if (!token) throw new Error("Auth failed — check credentials and URL");
 
-  // ===== VERIFY ACTUAL ROLE FROM FARMOS USER PROFILE =====
-  // farmOS may accept manager scope for worker accounts — check roles directly
+  // ===== VERIFY ACTUAL ROLE VIA CAPABILITY TEST =====
+  // Use multiple tests to determine role reliably across farmOS versions.
   let detectedRole = "worker"; // default safe
   try {
-    // Try /current endpoint first — returns the authenticated user reliably
-    let user = null;
     const base = window._useProxy ? "/proxy" : cfg.url;
-    const curRes = await fetch(base + "/api/user/user/current",
+
+    // Test 1: Can this user access /api/user/role? (lists role definitions — manager only)
+    const roleRes = await fetch(
+      base + "/api/user/role?page[limit]=1",
       { headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" } }
     );
-    if (curRes.ok) {
-      const curData = await curRes.json();
-      user = curData.data || null;
-    }
-    // Fall back to filter by username if /current not available
-    if (!user) {
-      const meRes = await fetch(
-        base + "/api/user/user?filter[name]=" + encodeURIComponent(cfg.user) + "&page[limit]=1",
+    if (roleRes.ok) {
+      detectedRole = "manager";
+    } else {
+      // Test 2: Can this user list all users and see more than just themselves?
+      // Workers can only see themselves. Managers see all users.
+      const userRes = await fetch(
+        base + "/api/user/user?page[limit]=5",
         { headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" } }
       );
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        user = (meData.data || [])[0] || null;
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        const userCount = (userData.data || []).length;
+        const totalCount = userData.meta?.count || userCount;
+        // If more than 1 user visible, this is a manager-level view
+        if (totalCount > 1 || userCount > 1) {
+          detectedRole = "manager";
+        }
       }
     }
-    if (user) {
-      const roles = user.relationships?.roles?.data || [];
-      // farmOS role IDs are machine names: "farm_manager", "farm_worker", etc.
-      const roleIds = roles.map(r => (r.id || "").toLowerCase());
-      if (roleIds.some(id => id.includes("manager") || id.includes("admin"))) {
-        detectedRole = "manager";
-      }
-    }
-  } catch(e) { /* fall back to worker if check fails */ }
+  } catch(e) { /* network error — default to worker */ }
 
   currentRole = detectedRole;
   localStorage.setItem(LS.role, detectedRole);
