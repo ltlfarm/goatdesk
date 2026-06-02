@@ -175,6 +175,7 @@ input:focus, select:focus, textarea:focus {
       <button onclick="show('history')" class="secondary">📋 History</button>
       <button onclick="show('settings')" class="secondary">⚙️ Settings</button>
       <button onclick="show('animals')" class="secondary">🐐 Animals</button>
+      <button onclick="show('users')" class="secondary" id="usersNavBtn">👥 Users</button>
       <button onclick="show('sync')" class="secondary">🔄 FarmOS Sync</button>
     </div>
   </div>
@@ -332,6 +333,23 @@ input:focus, select:focus, textarea:focus {
 
 </div>
 
+<!-- ===== USERS ===== -->
+<div id="screen-users" class="screen">
+  <div class="box">
+    <button class="secondary" onclick="show('home')">← Home</button>
+    <h3 style="margin:10px 0 6px;">👥 Users</h3>
+    <p style="color:#888;font-size:13px;">Set roles for each farmOS user. Pushed to farmOS config — all devices pick it up on next Fetch.</p>
+  </div>
+  <div class="box" id="usersListBox">
+    <strong>User Roles</strong>
+    <p style="color:#666;font-size:13px;">Do a Fetch first to load users from farmOS.</p>
+  </div>
+  <div class="box">
+    <button onclick="saveUserRoles()" style="width:100%;margin:0;">💾 Save &amp; Push Roles</button>
+    <div id="usersResult" style="font-size:13px;color:#888;margin-top:8px;"></div>
+  </div>
+</div>
+
 <!-- ===== ANIMALS ===== -->
 <div id="screen-animals" class="screen">
   <div class="box">
@@ -420,6 +438,8 @@ const LS = {
   lastSync:       "farmdesk_lastSync",
   role:           "farmdesk_role",
   recentUrls:     "farmdesk_recentUrls",
+  userRoles:      "farmdesk_userRoles",
+  knownUsers:     "farmdesk_knownUsers",
   // Per-URL log storage — key is farmdesk_logs_<urlhash>
   logsForUrl: (url) => "farmdesk_logs_" + btoa(url).replace(/[^a-z0-9]/gi,"").slice(0,20),
 };
@@ -477,6 +497,8 @@ let formulas = JSON.parse(localStorage.getItem(LS.formulas) || "null") || {
 // ===== ROLE & SESSION =====
 // ===== SHARED MODULE: role detection — manager vs worker =====
 let currentRole = localStorage.getItem(LS.role) || "worker"; // default to worker if unknown
+let userRoles = JSON.parse(localStorage.getItem("farmdesk_userRoles") || "{}"); // username -> "manager"|"worker"
+let knownUsers = JSON.parse(localStorage.getItem("farmdesk_knownUsers") || "[]"); // list of farmOS usernames seen
 let sessionDoseRate = null; // ml/lb — persists through med flow, null = use formula default
 window.addEventListener("popstate", () => {
   const active = document.querySelector(".screen.active");
@@ -499,6 +521,7 @@ function show(id) {
   if (id === "settings") { renderSettings(); }
   if (id === "sync") { renderSync(); }
   if (id === "animals") { renderAnimalsScreen(); }
+  if (id === "users") { renderUsersScreen(); }
 }
 
 // ===== FLOW =====
@@ -1829,6 +1852,73 @@ function addAnimalFromScreen() {
   renderAnimalsScreen();
 }
 
+// ===== SHARED MODULE: users screen =====
+function renderUsersScreen() {
+  const box = document.getElementById("usersListBox");
+  if (!box) return;
+
+  // Ensure current user is always in knownUsers
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  if (cfg.user && !knownUsers.includes(cfg.user)) {
+    knownUsers.push(cfg.user);
+    localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
+  }
+
+  if (!knownUsers.length) {
+    box.innerHTML = "<strong>User Roles</strong><p style='color:#666;font-size:13px;'>Do a Fetch first to load users from farmOS.</p>";
+    return;
+  }
+
+  box.innerHTML = "<strong>User Roles</strong><p style='color:#888;font-size:13px;margin-bottom:10px;'>Manager can log and change settings. Worker can log and fetch only.</p>";
+  knownUsers.slice().sort().forEach(username => {
+    const role = userRoles[username] || "worker";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid #333;";
+    const label = document.createElement("span");
+    label.style.flex = "1";
+    label.textContent = username;
+    label.style.fontSize = "16px";
+    const sel = document.createElement("select");
+    sel.dataset.username = username;
+    sel.style.cssText = "padding:8px;font-size:15px;width:140px;";
+    ["manager","worker"].forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r;
+      opt.textContent = r.charAt(0).toUpperCase() + r.slice(1);
+      if (r === role) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    row.appendChild(label);
+    row.appendChild(sel);
+    box.appendChild(row);
+  });
+}
+
+async function saveUserRoles() {
+  const result = document.getElementById("usersResult");
+  result.textContent = "Saving...";
+  result.style.color = "#888";
+
+  // Read selections from the screen
+  document.querySelectorAll("#usersListBox select[data-username]").forEach(sel => {
+    userRoles[sel.dataset.username] = sel.value;
+  });
+  localStorage.setItem(LS.userRoles, JSON.stringify(userRoles));
+
+  // Push to farmOS config log immediately
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  try {
+    const token = await getToken(cfg);
+    await pushConfig(token);
+    result.textContent = "✅ Roles saved and pushed to farmOS";
+    result.style.color = "#3a7";
+  } catch(e) {
+    // Saved locally even if push failed
+    result.textContent = "⚠️ Saved locally — push failed: " + e.message;
+    result.style.color = "#c90";
+  }
+}
+
 // ===== SHARED MODULE: logo =====
 function handleLogo(input) {
   const file = input.files[0];
@@ -2085,37 +2175,25 @@ async function getToken(cfg) {
 
   if (!token) throw new Error("Auth failed — check credentials and URL");
 
-  // ===== VERIFY ACTUAL ROLE VIA CAPABILITY TEST =====
-  // Use multiple tests to determine role reliably across farmOS versions.
+  // ===== ROLE DETECTION FROM CONFIG =====
+  // Primary: look up this user in userRoles config (set by manager, synced via farmOS config log)
+  // Fallback: if not in config yet, fetch config now to try to resolve
   let detectedRole = "worker"; // default safe
-  try {
-    const base = window._useProxy ? "/proxy" : cfg.url;
 
-    // Test 1: Can this user access /api/user/role? (lists role definitions — manager only)
-    const roleRes = await fetch(
-      base + "/api/user/role?page[limit]=1",
-      { headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" } }
-    );
-    if (roleRes.ok) {
-      detectedRole = "manager";
-    } else {
-      // Test 2: Can this user list all users and see more than just themselves?
-      // Workers can only see themselves. Managers see all users.
-      const userRes = await fetch(
-        base + "/api/user/user?page[limit]=5",
-        { headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" } }
-      );
-      if (userRes.ok) {
-        const userData = await userRes.json();
-        const userCount = (userData.data || []).length;
-        const totalCount = userData.meta?.count || userCount;
-        // If more than 1 user visible, this is a manager-level view
-        if (totalCount > 1 || userCount > 1) {
-          detectedRole = "manager";
-        }
+  // Check local userRoles first (may already be populated from a previous fetch)
+  if (userRoles[cfg.user]) {
+    detectedRole = userRoles[cfg.user];
+  } else {
+    // Not in local config — try fetching config log now to get role assignments
+    try {
+      await pullConfig(token);
+      if (userRoles[cfg.user]) {
+        detectedRole = userRoles[cfg.user];
       }
-    }
-  } catch(e) { /* network error — default to worker */ }
+      // If still not found after config pull — user hasn't been assigned a role yet
+      // Default to worker for safety; manager can assign role in Users screen
+    } catch(e) { /* config not yet created — stay worker until manager sets up roles */ }
+  }
 
   currentRole = detectedRole;
   localStorage.setItem(LS.role, detectedRole);
@@ -2139,6 +2217,7 @@ function applyRoleUI() {
     "managerOnlyLogo",
     "managerOnlyData",
     "managerOnlyConnection",
+    "usersNavBtn",
   ];
   managerOnly.forEach(id => {
     const el = document.getElementById(id);
@@ -2197,11 +2276,15 @@ function logout() {
     localStorage.removeItem(LS.animalUUIDs);
     localStorage.removeItem(LS.configLogUUID);
     localStorage.removeItem(LS.lastSync);
+    localStorage.removeItem(LS.userRoles);
+    localStorage.removeItem(LS.knownUsers);
     // Reset in-memory state
     logs = [];
     weights = {};
     goats = [...DEFAULT_ANIMALS];
     excludedAnimals = [];
+    userRoles = {};
+    knownUsers = [];
     currentRole = "worker";
     localStorage.setItem(LS.role, "worker");
     saveBtn.textContent = "💾 Save";
@@ -2325,7 +2408,9 @@ function buildConfigPayload(existingUUID) {
     customProcs:   [...new Set(logs.filter(l=>l.type==="proc"&&l.data.proc).map(l=>l.data.proc))],
     customMethods: [...new Set(logs.filter(l=>l.type==="proc"&&l.data.method).map(l=>l.data.method))],
     excludedAnimals,
-    logo: localStorage.getItem("farmdesk_logo") || null
+    logo: localStorage.getItem("farmdesk_logo") || null,
+    userRoles,
+    knownUsers
   };
   const payload = {
     data: {
@@ -2425,6 +2510,18 @@ async function pullConfig(token) {
   if (config.logo && !localStorage.getItem("farmdesk_logo")) {
     localStorage.setItem("farmdesk_logo", config.logo);
     applyLogo();
+  }
+  // Apply user roles from config — authoritative source for role assignments
+  if (config.userRoles && typeof config.userRoles === "object") {
+    userRoles = config.userRoles;
+    localStorage.setItem(LS.userRoles, JSON.stringify(userRoles));
+  }
+  // Merge known users list
+  if (Array.isArray(config.knownUsers)) {
+    config.knownUsers.forEach(u => {
+      if (!knownUsers.includes(u)) knownUsers.push(u);
+    });
+    localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
   }
 }
 
@@ -2558,6 +2655,15 @@ async function fetchAnimalUUIDs(silent = false) {
           }
         }
       } catch(e) { /* optional */ }
+    }
+
+    // Store all known usernames for Users screen
+    const fetchedUserNames = Object.values(userNames).filter(Boolean);
+    if (fetchedUserNames.length > 0) {
+      fetchedUserNames.forEach(u => {
+        if (!knownUsers.includes(u)) knownUsers.push(u);
+      });
+      localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
     }
 
     const farmosLogs = [];
