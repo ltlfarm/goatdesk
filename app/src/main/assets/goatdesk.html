@@ -2494,10 +2494,10 @@ async function fetchAnimalUUIDs(silent = false) {
     if (!silent && el) el.textContent = "Fetching recent logs...";
 
     const [actRes, obsRes, medRes, maintRes] = await Promise.all([
-      fetch(apiUrl("/api/log/activity?page[limit]=50&sort=-timestamp"),    { headers: authHeaders }),
-      fetch(apiUrl("/api/log/observation?page[limit]=50&sort=-timestamp"), { headers: authHeaders }),
-      fetch(apiUrl("/api/log/medical?page[limit]=50&sort=-timestamp"),     { headers: authHeaders }),
-      fetch(apiUrl("/api/log/maintenance?page[limit]=50&sort=-timestamp"), { headers: authHeaders })
+      fetch(apiUrl("/api/log/activity?page[limit]=200&sort=-timestamp"),    { headers: authHeaders }),
+      fetch(apiUrl("/api/log/observation?page[limit]=200&sort=-timestamp"), { headers: authHeaders }),
+      fetch(apiUrl("/api/log/medical?page[limit]=200&sort=-timestamp"),     { headers: authHeaders }),
+      fetch(apiUrl("/api/log/maintenance?page[limit]=200&sort=-timestamp"), { headers: authHeaders })
     ]);
 
     const allLogs = [];
