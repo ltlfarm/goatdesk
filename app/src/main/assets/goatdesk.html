@@ -2208,6 +2208,13 @@ async function getToken(cfg, detectRole = true) {
 
   currentRole = detectedRole;
   localStorage.setItem(LS.role, detectedRole);
+
+  // Always record the current username in knownUsers so Users screen shows all who have logged in
+  if (cfg.user && !knownUsers.includes(cfg.user)) {
+    knownUsers.push(cfg.user);
+    localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
+  }
+
   applyRoleUI();
 
   // If the Sync screen is open, re-render it so the connection boxes match the new role.
@@ -2501,7 +2508,12 @@ async function pullConfig(token) {
 
   let config;
   try {
-    config = JSON.parse(record.attributes?.notes?.value || "{}");
+    // farmOS may wrap notes in HTML tags (e.g. <p>...</p>) when format="default" — strip before parsing
+    const raw = (record.attributes?.notes?.value || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+      .trim();
+    config = JSON.parse(raw || "{}");
   } catch(e) { return; }
 
   // Apply remote config to local
