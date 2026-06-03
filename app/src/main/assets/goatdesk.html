@@ -2026,18 +2026,15 @@ async function getToken(cfg) {
   const proxyBase  = "/proxy/oauth/token";
   const directBase = cfg.url + "/oauth/token";
 
-  for (const [url, scope, useProxy] of [
-    [proxyBase,  "farm_manager", true],
-    [proxyBase,  "farm_worker",  true],
-    [directBase, "farm_manager", false],
-    [directBase, "farm_worker",  false],
+  for (const [url, useProxy] of [
+    [proxyBase,  true],
+    [directBase, false],
   ]) {
     try {
-      const token = await tryAuth(url, scope);
+      const token = await tryAuth(url, "farm_manager");
       if (token) {
         window._useProxy = useProxy;
-        // Track whether this is a manager-scope token so push can decide on config sync
-        window._isManagerScope = (scope === "farm_manager");
+        window._isManagerScope = true;
         return token;
       }
     } catch(e) { /* try next */ }
