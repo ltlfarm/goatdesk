@@ -1905,10 +1905,11 @@ async function saveUserRoles() {
   });
   localStorage.setItem(LS.userRoles, JSON.stringify(userRoles));
 
-  // Push to farmOS config log immediately
+  // Push to farmOS config log immediately.
+  // detectRole = false so we don't pull config and overwrite the roles we just set.
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   try {
-    const token = await getToken(cfg);
+    const token = await getToken(cfg, false);
     await pushConfig(token);
     result.textContent = "✅ Roles saved and pushed to farmOS";
     result.style.color = "#3a7";
@@ -2126,9 +2127,16 @@ function saveFarmOSCfg() {
   return cfg;
 }
 
-// ===== SHARED MODULE: OAuth2 with role verified from farmOS user profile =====
-// farmOS may grant manager scope to worker accounts — verify actual role via API
-async function getToken(cfg) {
+// ===== SHARED MODULE: OAuth2 authentication + role detection =====
+//
+// getToken(cfg, detectRole)
+//   cfg        - { url, user, pass } farmOS credentials
+//   detectRole - true  : pull config log and set currentRole from userRoles (used on Fetch / login)
+//                false : authenticate only, leave currentRole untouched (used on Push)
+//
+// IMPORTANT: Push must NEVER pull config (it would overwrite unsynced local state),
+// so syncToFarmOS calls getToken(cfg, false).
+async function getToken(cfg, detectRole = true) {
   const tryAuth = async (url, scope) => {
     const body = new URLSearchParams({
       grant_type: "password",
@@ -2175,29 +2183,38 @@ async function getToken(cfg) {
 
   if (!token) throw new Error("Auth failed — check credentials and URL");
 
-  // ===== ROLE DETECTION FROM CONFIG =====
-  // Primary: look up this user in userRoles config (set by manager, synced via farmOS config log)
-  // Fallback: if not in config yet, fetch config now to try to resolve
-  let detectedRole = "worker"; // default safe
+  // If caller only wants a token (e.g. Push), skip all config/role work and return now.
+  if (!detectRole) return token;
 
-  // Check local userRoles first (may already be populated from a previous fetch)
+  // ===== ROLE DETECTION (Fetch / login only) =====
+  // The role for a user lives in the farmOS config log under userRoles[username].
+  // The token is only used to READ that config — it does not decide the role itself.
+  let detectedRole = "worker"; // safe default
+
+  // Pull the config log so userRoles is current before we look up this user.
+  try {
+    await pullConfig(token);
+  } catch(e) { /* config log may not exist yet on a brand-new farm */ }
+
   if (userRoles[cfg.user]) {
+    // This user has an explicit role assigned by a manager — use it.
     detectedRole = userRoles[cfg.user];
-  } else {
-    // Not in local config — try fetching config log now to get role assignments
-    try {
-      await pullConfig(token);
-      if (userRoles[cfg.user]) {
-        detectedRole = userRoles[cfg.user];
-      }
-      // If still not found after config pull — user hasn't been assigned a role yet
-      // Default to worker for safety; manager can assign role in Users screen
-    } catch(e) { /* config not yet created — stay worker until manager sets up roles */ }
+  } else if (Object.keys(userRoles).length === 0) {
+    // No roles configured anywhere yet — first-time setup.
+    // Make this first user a manager so they can open the Users screen and assign roles.
+    detectedRole = "manager";
   }
+  // else: roles exist but this user isn't listed -> stay worker (safe default).
 
   currentRole = detectedRole;
   localStorage.setItem(LS.role, detectedRole);
   applyRoleUI();
+
+  // If the Sync screen is open, re-render it so the connection boxes match the new role.
+  const syncScreen = document.getElementById("screen-sync");
+  if (syncScreen && syncScreen.classList.contains("active")) {
+    renderSync();
+  }
   return token;
 }
 
@@ -2525,8 +2542,16 @@ async function pullConfig(token) {
   }
 }
 
-// ===== FETCH (animals + logs + config) =====
-async function fetchAnimalUUIDs(silent = false) {
+// ===== FETCH (animals + logs, optionally config) =====
+//
+// fetchAnimalUUIDs(silent, pullCfg)
+//   silent  - true: no on-screen status messages (used by startup + pre-push fetch)
+//   pullCfg - true:  also pull the shared config log (roles, formulas, excluded list)
+//             false: skip config entirely — used by Push so it never overwrites local state
+//
+// On Fetch/login: pullCfg = true  (we want the latest shared settings).
+// On Push:        pullCfg = false (push only needs current animal UUIDs to link logs).
+async function fetchAnimalUUIDs(silent = false, pullCfg = true) {
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   if (!cfg.url || !cfg.user || !cfg.pass) {
     if (!silent) {
@@ -2550,16 +2575,18 @@ async function fetchAnimalUUIDs(silent = false) {
     : document.getElementById("farmosTestResult2");
 
   try {
-    const token = await getToken(cfg);
+    // Authenticate. Only detect role when we are also pulling config (i.e. a real Fetch).
+    const token = await getToken(cfg, pullCfg);
     const authHeaders = {
       "Authorization": "Bearer " + token,
       "Accept": "application/vnd.api+json"
     };
 
-    if (!silent && el) { el.style.color = "#888"; el.textContent = "Fetching config..."; }
-
-    // ===== STEP 1: Pull shared config from farmOS =====
-    await pullConfig(token);
+    // ===== STEP 1: Pull shared config from farmOS (Fetch only — skipped on Push) =====
+    if (pullCfg) {
+      if (!silent && el) { el.style.color = "#888"; el.textContent = "Fetching config..."; }
+      await pullConfig(token);
+    }
 
     // ===== STEP 2: Fetch all animals =====
     if (!silent && el) el.textContent = "Fetching animals...";
@@ -2873,42 +2900,23 @@ async function syncToFarmOS() {
   const logEl = document.getElementById("syncLog");
   logEl.textContent = "Authenticating...\n";
 
-  // ===== SHARED MODULE: fetch-recency warning =====
-  const lastSyncTime = localStorage.getItem(LS.lastSync);
-  const unsyncedCheck = logs.filter(l => !l.synced);
-  if (unsyncedCheck.length > 0 && lastSyncTime) {
-    const minutesSinceSync = (Date.now() - new Date("1/1/1970 " + lastSyncTime).getTime()) / 60000;
-    if (!isNaN(minutesSinceSync) && minutesSinceSync > 60) {
-      logEl.textContent += `⚠️ Last fetch was over an hour ago. Fetching first to avoid conflicts...\n`;
-    }
-  }
-
   let token;
   try {
-    token = await getToken(cfg);
+    // detectRole = false — Push must NOT pull config or change the current role.
+    token = await getToken(cfg, false);
     logEl.textContent += "✅ Token OK\n";
   } catch(e) {
     logEl.textContent += "❌ Auth failed: " + e.message + "\n";
     return;
   }
 
-  // ===== STEP 1: Refresh animal UUIDs only — no config pull, no animal list changes =====
-  // Push must NOT run pullConfig or rebuild the animal list — that belongs to Fetch only
+  // ===== STEP 1: Refresh animals/logs before push — config is NOT pulled =====
+  // pullCfg = false so Push never overwrites local roles/formulas/excluded list.
+  logEl.textContent += "Fetching latest...\n";
   try {
-    const uuidRes = await fetch(apiUrl("/api/asset/animal?page[limit]=100"), {
-      headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.api+json" }
-    });
-    if (uuidRes.ok) {
-      const uuidData = await uuidRes.json();
-      (uuidData.data || []).forEach(a => {
-        const name = (a.attributes.name || "").trim();
-        if (name && a.attributes.status !== "archived") {
-          animalUUIDs[name] = a.id;
-        }
-      });
-      localStorage.setItem(LS.animalUUIDs, JSON.stringify(animalUUIDs));
-    }
-  } catch(e) { /* continue — UUIDs from last fetch will be used */ }
+    await fetchAnimalUUIDs(true, false); // silent=true, pullCfg=false
+    logEl.textContent += "✅ Fetch OK\n";
+  } catch(e) { /* continue even if fetch fails */ }
 
   // ===== STEP 2: Push unsynced logs =====
   const unsynced = logs.filter(l => !l.synced);
