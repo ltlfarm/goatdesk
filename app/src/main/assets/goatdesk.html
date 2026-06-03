@@ -175,7 +175,6 @@ input:focus, select:focus, textarea:focus {
       <button onclick="show('history')" class="secondary">📋 History</button>
       <button onclick="show('settings')" class="secondary">⚙️ Settings</button>
       <button onclick="show('animals')" class="secondary">🐐 Animals</button>
-      <button onclick="show('users')" class="secondary" id="usersNavBtn">👥 Users</button>
       <button onclick="show('sync')" class="secondary">🔄 FarmOS Sync</button>
     </div>
   </div>
@@ -333,23 +332,6 @@ input:focus, select:focus, textarea:focus {
 
 </div>
 
-<!-- ===== USERS ===== -->
-<div id="screen-users" class="screen">
-  <div class="box">
-    <button class="secondary" onclick="show('home')">← Home</button>
-    <h3 style="margin:10px 0 6px;">👥 Users</h3>
-    <p style="color:#888;font-size:13px;">Set roles for each farmOS user. Pushed to farmOS config — all devices pick it up on next Fetch.</p>
-  </div>
-  <div class="box" id="usersListBox">
-    <strong>User Roles</strong>
-    <p style="color:#666;font-size:13px;">Do a Fetch first to load users from farmOS.</p>
-  </div>
-  <div class="box">
-    <button onclick="saveUserRoles()" style="width:100%;margin:0;">💾 Save &amp; Push Roles</button>
-    <div id="usersResult" style="font-size:13px;color:#888;margin-top:8px;"></div>
-  </div>
-</div>
-
 <!-- ===== ANIMALS ===== -->
 <div id="screen-animals" class="screen">
   <div class="box">
@@ -438,8 +420,6 @@ const LS = {
   lastSync:       "farmdesk_lastSync",
   role:           "farmdesk_role",
   recentUrls:     "farmdesk_recentUrls",
-  userRoles:      "farmdesk_userRoles",
-  knownUsers:     "farmdesk_knownUsers",
   // Per-URL log storage — key is farmdesk_logs_<urlhash>
   logsForUrl: (url) => "farmdesk_logs_" + btoa(url).replace(/[^a-z0-9]/gi,"").slice(0,20),
 };
@@ -497,8 +477,6 @@ let formulas = JSON.parse(localStorage.getItem(LS.formulas) || "null") || {
 // ===== ROLE & SESSION =====
 // ===== SHARED MODULE: role detection — manager vs worker =====
 let currentRole = localStorage.getItem(LS.role) || "worker"; // default to worker if unknown
-let userRoles = JSON.parse(localStorage.getItem("farmdesk_userRoles") || "{}"); // username -> "manager"|"worker"
-let knownUsers = JSON.parse(localStorage.getItem("farmdesk_knownUsers") || "[]"); // list of farmOS usernames seen
 let sessionDoseRate = null; // ml/lb — persists through med flow, null = use formula default
 window.addEventListener("popstate", () => {
   const active = document.querySelector(".screen.active");
@@ -521,7 +499,6 @@ function show(id) {
   if (id === "settings") { renderSettings(); }
   if (id === "sync") { renderSync(); }
   if (id === "animals") { renderAnimalsScreen(); }
-  if (id === "users") { renderUsersScreen(); }
 }
 
 // ===== FLOW =====
@@ -1852,74 +1829,6 @@ function addAnimalFromScreen() {
   renderAnimalsScreen();
 }
 
-// ===== SHARED MODULE: users screen =====
-function renderUsersScreen() {
-  const box = document.getElementById("usersListBox");
-  if (!box) return;
-
-  // Ensure current user is always in knownUsers
-  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
-  if (cfg.user && !knownUsers.includes(cfg.user)) {
-    knownUsers.push(cfg.user);
-    localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
-  }
-
-  if (!knownUsers.length) {
-    box.innerHTML = "<strong>User Roles</strong><p style='color:#666;font-size:13px;'>Do a Fetch first to load users from farmOS.</p>";
-    return;
-  }
-
-  box.innerHTML = "<strong>User Roles</strong><p style='color:#888;font-size:13px;margin-bottom:10px;'>Manager can log and change settings. Worker can log and fetch only.</p>";
-  knownUsers.slice().sort().forEach(username => {
-    const role = userRoles[username] || "worker";
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid #333;";
-    const label = document.createElement("span");
-    label.style.flex = "1";
-    label.textContent = username;
-    label.style.fontSize = "16px";
-    const sel = document.createElement("select");
-    sel.dataset.username = username;
-    sel.style.cssText = "padding:8px;font-size:15px;width:140px;";
-    ["manager","worker"].forEach(r => {
-      const opt = document.createElement("option");
-      opt.value = r;
-      opt.textContent = r.charAt(0).toUpperCase() + r.slice(1);
-      if (r === role) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    row.appendChild(label);
-    row.appendChild(sel);
-    box.appendChild(row);
-  });
-}
-
-async function saveUserRoles() {
-  const result = document.getElementById("usersResult");
-  result.textContent = "Saving...";
-  result.style.color = "#888";
-
-  // Read selections from the screen
-  document.querySelectorAll("#usersListBox select[data-username]").forEach(sel => {
-    userRoles[sel.dataset.username] = sel.value;
-  });
-  localStorage.setItem(LS.userRoles, JSON.stringify(userRoles));
-
-  // Push to farmOS config log immediately.
-  // detectRole = false so we don't pull config and overwrite the roles we just set.
-  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
-  try {
-    const token = await getToken(cfg, false);
-    await pushConfig(token);
-    result.textContent = "✅ Roles saved and pushed to farmOS";
-    result.style.color = "#3a7";
-  } catch(e) {
-    // Saved locally even if push failed
-    result.textContent = "⚠️ Saved locally — push failed: " + e.message;
-    result.style.color = "#c90";
-  }
-}
-
 // ===== SHARED MODULE: logo =====
 function handleLogo(input) {
   const file = input.files[0];
@@ -2127,16 +2036,9 @@ function saveFarmOSCfg() {
   return cfg;
 }
 
-// ===== SHARED MODULE: OAuth2 authentication + role detection =====
-//
-// getToken(cfg, detectRole)
-//   cfg        - { url, user, pass } farmOS credentials
-//   detectRole - true  : pull config log and set currentRole from userRoles (used on Fetch / login)
-//                false : authenticate only, leave currentRole untouched (used on Push)
-//
-// IMPORTANT: Push must NEVER pull config (it would overwrite unsynced local state),
-// so syncToFarmOS calls getToken(cfg, false).
-async function getToken(cfg, detectRole = true) {
+// ===== SHARED MODULE: OAuth2 — tries farm_manager scope first, falls back to farm_worker =====
+// Role is set from whichever scope succeeds. No config pull during auth.
+async function getToken(cfg) {
   const tryAuth = async (url, scope) => {
     const body = new URLSearchParams({
       grant_type: "password",
@@ -2157,74 +2059,35 @@ async function getToken(cfg, detectRole = true) {
     return null;
   };
 
-  const proxyBase = "/proxy/oauth/token";
+  const proxyBase  = "/proxy/oauth/token";
   const directBase = cfg.url + "/oauth/token";
-
-  let token = null;
 
   // Try proxy manager, proxy worker, direct manager, direct worker — first success wins
   const attempts = [
-    [proxyBase, "farm_manager", true],
-    [proxyBase, "farm_worker",  true],
-    [directBase, "farm_manager", false],
-    [directBase, "farm_worker",  false],
+    [proxyBase,  "farm_manager", true,  "manager"],
+    [proxyBase,  "farm_worker",  true,  "worker"],
+    [directBase, "farm_manager", false, "manager"],
+    [directBase, "farm_worker",  false, "worker"],
   ];
 
-  for (const [url, scope, useProxy] of attempts) {
+  for (const [url, scope, useProxy, role] of attempts) {
     try {
-      const t = await tryAuth(url, scope);
-      if (t) {
-        token = t;
+      const token = await tryAuth(url, scope);
+      if (token) {
         window._useProxy = useProxy;
-        break;
+        currentRole = role;
+        localStorage.setItem(LS.role, role);
+        applyRoleUI();
+        // Re-render sync screen if it is open so connection boxes match new role
+        const syncScreen = document.getElementById("screen-sync");
+        if (syncScreen && syncScreen.classList.contains("active")) renderSync();
+        return token;
       }
     } catch(e) { /* try next */ }
   }
 
-  if (!token) throw new Error("Auth failed — check credentials and URL");
-
-  // If caller only wants a token (e.g. Push), skip all config/role work and return now.
-  if (!detectRole) return token;
-
-  // ===== ROLE DETECTION (Fetch / login only) =====
-  // The role for a user lives in the farmOS config log under userRoles[username].
-  // The token is only used to READ that config — it does not decide the role itself.
-  let detectedRole = "worker"; // safe default
-
-  // Pull the config log so userRoles is current before we look up this user.
-  try {
-    await pullConfig(token);
-  } catch(e) { /* config log may not exist yet on a brand-new farm */ }
-
-  if (userRoles[cfg.user]) {
-    // This user has an explicit role assigned by a manager — use it.
-    detectedRole = userRoles[cfg.user];
-  } else if (Object.keys(userRoles).length === 0) {
-    // No roles configured anywhere yet — first-time setup.
-    // Make this first user a manager so they can open the Users screen and assign roles.
-    detectedRole = "manager";
-  }
-  // else: roles exist but this user isn't listed -> stay worker (safe default).
-
-  currentRole = detectedRole;
-  localStorage.setItem(LS.role, detectedRole);
-
-  // Always record the current username in knownUsers so Users screen shows all who have logged in
-  if (cfg.user && !knownUsers.includes(cfg.user)) {
-    knownUsers.push(cfg.user);
-    localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
-  }
-
-  applyRoleUI();
-
-  // If the Sync screen is open, re-render it so the connection boxes match the new role.
-  const syncScreen = document.getElementById("screen-sync");
-  if (syncScreen && syncScreen.classList.contains("active")) {
-    renderSync();
-  }
-  return token;
+  throw new Error("Auth failed — check credentials and URL");
 }
-
 function apiUrl(path) {
   return window._useProxy ? "/proxy" + path : (JSON.parse(localStorage.getItem(LS.cfg) || "{}").url || "") + path;
 }
@@ -2241,7 +2104,6 @@ function applyRoleUI() {
     "managerOnlyLogo",
     "managerOnlyData",
     "managerOnlyConnection",
-    "usersNavBtn",
   ];
   managerOnly.forEach(id => {
     const el = document.getElementById(id);
@@ -2300,15 +2162,11 @@ function logout() {
     localStorage.removeItem(LS.animalUUIDs);
     localStorage.removeItem(LS.configLogUUID);
     localStorage.removeItem(LS.lastSync);
-    localStorage.removeItem(LS.userRoles);
-    localStorage.removeItem(LS.knownUsers);
     // Reset in-memory state
     logs = [];
     weights = {};
     goats = [...DEFAULT_ANIMALS];
     excludedAnimals = [];
-    userRoles = {};
-    knownUsers = [];
     currentRole = "worker";
     localStorage.setItem(LS.role, "worker");
     saveBtn.textContent = "💾 Save";
@@ -2432,9 +2290,7 @@ function buildConfigPayload(existingUUID) {
     customProcs:   [...new Set(logs.filter(l=>l.type==="proc"&&l.data.proc).map(l=>l.data.proc))],
     customMethods: [...new Set(logs.filter(l=>l.type==="proc"&&l.data.method).map(l=>l.data.method))],
     excludedAnimals,
-    logo: localStorage.getItem("farmdesk_logo") || null,
-    userRoles,
-    knownUsers
+    logo: localStorage.getItem("farmdesk_logo") || null
   };
   const payload = {
     data: {
@@ -2540,30 +2396,10 @@ async function pullConfig(token) {
     localStorage.setItem("farmdesk_logo", config.logo);
     applyLogo();
   }
-  // Apply user roles from config — authoritative source for role assignments
-  if (config.userRoles && typeof config.userRoles === "object") {
-    userRoles = config.userRoles;
-    localStorage.setItem(LS.userRoles, JSON.stringify(userRoles));
-  }
-  // Merge known users list
-  if (Array.isArray(config.knownUsers)) {
-    config.knownUsers.forEach(u => {
-      if (!knownUsers.includes(u)) knownUsers.push(u);
-    });
-    localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
-  }
 }
 
-// ===== FETCH (animals + logs, optionally config) =====
-//
-// fetchAnimalUUIDs(silent, pullCfg)
-//   silent  - true: no on-screen status messages (used by startup + pre-push fetch)
-//   pullCfg - true:  also pull the shared config log (roles, formulas, excluded list)
-//             false: skip config entirely — used by Push so it never overwrites local state
-//
-// On Fetch/login: pullCfg = true  (we want the latest shared settings).
-// On Push:        pullCfg = false (push only needs current animal UUIDs to link logs).
-async function fetchAnimalUUIDs(silent = false, pullCfg = true) {
+// ===== FETCH (animals + logs + config) =====
+async function fetchAnimalUUIDs(silent = false) {
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   if (!cfg.url || !cfg.user || !cfg.pass) {
     if (!silent) {
@@ -2575,24 +2411,20 @@ async function fetchAnimalUUIDs(silent = false, pullCfg = true) {
     return;
   }
 
-  // Save cfg from input fields if they exist (managerOnlyConnection shows for everyone on first login)
+  // Save cfg from input fields if visible (first login uses manager connection form)
   const urlEl = document.getElementById("farmosUrl");
   if (urlEl && urlEl.value) saveFarmOSCfg();
-  // Re-read cfg after potential save
-  const cfgFinal = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
-  if (!cfgFinal.url || !cfgFinal.user || !cfgFinal.pass) return;
+  const cfgSaved = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  if (!cfgSaved.url || !cfgSaved.user || !cfgSaved.pass) return;
 
-  // Result element: manager uses farmosTestResult, worker uses farmosTestResult2
-  // NOTE: currentRole may change during this call (role detected after config pull)
-  // so we pick the element AFTER getToken completes for the result message
+  // Result element differs by role
   let el = currentRole === "manager"
     ? document.getElementById("farmosTestResult")
     : document.getElementById("farmosTestResult2");
 
   try {
-    // Authenticate. detectRole=pullCfg so role is only set on real Fetch, not Push.
-    const token = await getToken(cfgFinal, pullCfg);
-    // Re-pick result element after role may have changed
+    const token = await getToken(cfgSaved);
+    // Re-pick result element in case role changed during auth
     el = currentRole === "manager"
       ? document.getElementById("farmosTestResult")
       : document.getElementById("farmosTestResult2");
@@ -2601,8 +2433,9 @@ async function fetchAnimalUUIDs(silent = false, pullCfg = true) {
       "Accept": "application/vnd.api+json"
     };
 
-    // Config was already pulled inside getToken when detectRole=true.
-    // No second pull needed here.
+    // ===== STEP 1: Pull shared config =====
+    if (!silent && el) { el.style.color = "#888"; el.textContent = "Fetching config..."; }
+    await pullConfig(token);
 
     // ===== STEP 2: Fetch all animals =====
     if (!silent && el) el.textContent = "Fetching animals...";
@@ -2698,15 +2531,6 @@ async function fetchAnimalUUIDs(silent = false, pullCfg = true) {
           }
         }
       } catch(e) { /* optional */ }
-    }
-
-    // Store all known usernames for Users screen
-    const fetchedUserNames = Object.values(userNames).filter(Boolean);
-    if (fetchedUserNames.length > 0) {
-      fetchedUserNames.forEach(u => {
-        if (!knownUsers.includes(u)) knownUsers.push(u);
-      });
-      localStorage.setItem(LS.knownUsers, JSON.stringify(knownUsers));
     }
 
     const farmosLogs = [];
@@ -2918,19 +2742,17 @@ async function syncToFarmOS() {
 
   let token;
   try {
-    // detectRole = false — Push must NOT pull config or change the current role.
-    token = await getToken(cfg, false);
+    token = await getToken(cfg);
     logEl.textContent += "✅ Token OK\n";
   } catch(e) {
     logEl.textContent += "❌ Auth failed: " + e.message + "\n";
     return;
   }
 
-  // ===== STEP 1: Refresh animals/logs before push — config is NOT pulled =====
-  // pullCfg = false so Push never overwrites local roles/formulas/excluded list.
+  // ===== STEP 1: Refresh animal UUIDs before push =====
   logEl.textContent += "Fetching latest...\n";
   try {
-    await fetchAnimalUUIDs(true, false); // silent=true, pullCfg=false
+    await fetchAnimalUUIDs(true); // silent — no UI feedback, just keeps UUIDs current
     logEl.textContent += "✅ Fetch OK\n";
   } catch(e) { /* continue even if fetch fails */ }
 
