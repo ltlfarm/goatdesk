@@ -2563,30 +2563,34 @@ async function fetchAnimalUUIDs(silent = false, pullCfg = true) {
     return;
   }
 
-  // Save cfg from fields only if manager — worker screen has no input fields
-  if (currentRole === "manager") {
-    const urlEl = document.getElementById("farmosUrl");
-    if (urlEl) saveFarmOSCfg();
-  }
+  // Save cfg from input fields if they exist (managerOnlyConnection shows for everyone on first login)
+  const urlEl = document.getElementById("farmosUrl");
+  if (urlEl && urlEl.value) saveFarmOSCfg();
+  // Re-read cfg after potential save
+  const cfgFinal = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  if (!cfgFinal.url || !cfgFinal.user || !cfgFinal.pass) return;
 
-  // Result element differs by role — workers use farmosTestResult2
-  const el = currentRole === "manager"
+  // Result element: manager uses farmosTestResult, worker uses farmosTestResult2
+  // NOTE: currentRole may change during this call (role detected after config pull)
+  // so we pick the element AFTER getToken completes for the result message
+  let el = currentRole === "manager"
     ? document.getElementById("farmosTestResult")
     : document.getElementById("farmosTestResult2");
 
   try {
-    // Authenticate. Only detect role when we are also pulling config (i.e. a real Fetch).
-    const token = await getToken(cfg, pullCfg);
+    // Authenticate. detectRole=pullCfg so role is only set on real Fetch, not Push.
+    const token = await getToken(cfgFinal, pullCfg);
+    // Re-pick result element after role may have changed
+    el = currentRole === "manager"
+      ? document.getElementById("farmosTestResult")
+      : document.getElementById("farmosTestResult2");
     const authHeaders = {
       "Authorization": "Bearer " + token,
       "Accept": "application/vnd.api+json"
     };
 
-    // ===== STEP 1: Pull shared config from farmOS (Fetch only — skipped on Push) =====
-    if (pullCfg) {
-      if (!silent && el) { el.style.color = "#888"; el.textContent = "Fetching config..."; }
-      await pullConfig(token);
-    }
+    // Config was already pulled inside getToken when detectRole=true.
+    // No second pull needed here.
 
     // ===== STEP 2: Fetch all animals =====
     if (!silent && el) el.textContent = "Fetching animals...";
