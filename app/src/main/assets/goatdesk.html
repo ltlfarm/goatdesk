@@ -150,7 +150,6 @@ input:focus, select:focus, textarea:focus {
   </div>
   <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
     <small id="syncStatus">Offline</small>
-    <small id="roleBadge" style="font-size:12px;font-weight:bold;"></small>
   </div>
 </header>
 
@@ -269,7 +268,7 @@ input:focus, select:focus, textarea:focus {
     <h3 style="margin:10px 0 6px;">⚙️ Settings</h3>
   </div>
 
-  <div class="box" id="managerOnlyFormulas">
+  <div class="box">
     <strong>Med Formulas</strong>
     <p style="color:#888;font-size:13px;">ml per lb of body weight. Round↓ sets per-med dose rounding. Save when done.</p>
     <table class="formula-table">
@@ -295,13 +294,12 @@ input:focus, select:focus, textarea:focus {
     <button onclick="saveFormulas()" style="margin-top:10px;width:100%;">💾 Save Formulas</button>
   </div>
 
-  <div class="box" id="managerOnlyAnimals">
+  <div class="box">
     <strong>Animal List</strong>
-    <p style="color:#888;font-size:13px;">Manage animals, exclusions and the selector list.</p>
     <button onclick="show('animals')" class="wide secondary" style="margin-top:6px;">🐐 Manage Animals</button>
   </div>
 
-  <div class="box" id="managerOnlyLogo">
+  <div class="box">
     <strong>Farm Logo</strong>
     <p style="color:#888;font-size:13px;">Logo shows in the header. Syncs to farmOS so farm hands see it after fetching.</p>
     <div id="logoPreview" style="margin-bottom:8px;"></div>
@@ -312,7 +310,7 @@ input:focus, select:focus, textarea:focus {
     <input type="file" id="logoFile" accept="image/*" style="display:none;" onchange="handleLogo(this)">
   </div>
 
-  <div class="box" id="managerOnlyData">
+  <div class="box">
     <strong>Data</strong>
     <button class="wide secondary" onclick="exportLogs()">📤 Export Logs (JSON)</button>
     <button class="wide secondary" onclick="document.getElementById('importFile').click()" style="margin-top:8px;">📥 Import Logs (JSON)</button>
@@ -365,7 +363,7 @@ input:focus, select:focus, textarea:focus {
     <h3 style="margin:10px 0 6px;">🔄 FarmOS Sync</h3>
   </div>
 
-  <div class="box" id="managerOnlyConnection">
+  <div class="box" id="connectionBox">
     <strong>Connection</strong>
     <label>FarmOS URL</label>
     <input id="farmosUrl" placeholder="https://yourfarm.farmos.net" type="url">
@@ -384,13 +382,6 @@ input:focus, select:focus, textarea:focus {
     <div id="farmosTestResult" style="margin-top:8px;font-size:13px;color:#888;"></div>
   </div>
 
-  <!-- Worker connection info — read only, fetch only -->
-  <div class="box" id="workerConnection" style="display:none;">
-    <strong>Connection</strong>
-    <div id="workerFarmInfo" style="color:#888;font-size:14px;margin:8px 0;"></div>
-    <button onclick="fetchAnimalUUIDs()" style="width:100%;margin:0;">🔄 Fetch Logs</button>
-    <div id="farmosTestResult2" style="margin-top:8px;font-size:13px;color:#888;"></div>
-  </div>
 
   <div class="box">
     <strong>Sync</strong>
@@ -418,7 +409,6 @@ const LS = {
   animalUUIDs:    "farmdesk_animalUUIDs",
   configLogUUID:  "farmdesk_configLogUUID",
   lastSync:       "farmdesk_lastSync",
-  role:           "farmdesk_role",
   recentUrls:     "farmdesk_recentUrls",
   // Per-URL log storage — key is farmdesk_logs_<urlhash>
   logsForUrl: (url) => "farmdesk_logs_" + btoa(url).replace(/[^a-z0-9]/gi,"").slice(0,20),
@@ -476,7 +466,6 @@ let formulas = JSON.parse(localStorage.getItem(LS.formulas) || "null") || {
 
 // ===== ROLE & SESSION =====
 // ===== SHARED MODULE: role detection — manager vs worker =====
-let currentRole = localStorage.getItem(LS.role) || "worker"; // default to worker if unknown
 let sessionDoseRate = null; // ml/lb — persists through med flow, null = use formula default
 window.addEventListener("popstate", () => {
   const active = document.querySelector(".screen.active");
@@ -1597,10 +1586,9 @@ document.getElementById("sortOrder").onchange = renderHistory;
 
 // ===== SETTINGS =====
 function renderSettings() {
-  applyRoleUI();
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   const userInfo = document.getElementById("settingsUserInfo");
-  if (userInfo) userInfo.textContent = cfg.user ? `Logged in as: ${cfg.user} (${currentRole})` : "Not logged in";
+  if (userInfo) userInfo.textContent = cfg.user ? `Logged in as: ${cfg.user}` : "Not logged in";
   // Logo preview
   const logoPreview = document.getElementById("logoPreview");
   const clearLogoBtn = document.getElementById("clearLogoBtn");
@@ -1771,27 +1759,20 @@ function removeAnimal(name) {
 
 // ===== SHARED MODULE: animals screen =====
 function renderAnimalsScreen() {
-  const isManager = currentRole === "manager";
   const al = document.getElementById("animalsAnimalList");
   al.innerHTML = "";
-  // Show/hide add row based on role
-  const addRow = document.getElementById("animalsAddRow");
-  if (addRow) addRow.style.display = isManager ? "" : "none";
-
   goats.forEach((g, i) => {
     const row = document.createElement("div");
     row.style.cssText = `display:flex;align-items:center;gap:6px;margin-bottom:2px;padding:6px 8px;border-radius:6px;background:${i % 2 === 0 ? "#2a2a2a" : "#333"};`;
     const name = document.createElement("span");
     name.style.flex = "1";
     name.textContent = g;
+    const btn = document.createElement("button");
+    btn.textContent = "✕";
+    btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
+    btn.onclick = () => removeAnimal(g);
     row.appendChild(name);
-    if (isManager) {
-      const btn = document.createElement("button");
-      btn.textContent = "✕";
-      btn.style.cssText = "padding:6px 12px;font-size:14px;background:#8b0000;margin:0;";
-      btn.onclick = () => removeAnimal(g);
-      row.appendChild(btn);
-    }
+    row.appendChild(btn);
     al.appendChild(row);
   });
 
@@ -1807,14 +1788,12 @@ function renderAnimalsScreen() {
     const n = document.createElement("span");
     n.style.cssText = "flex:1;color:#888;";
     n.textContent = name;
+    const btn = document.createElement("button");
+    btn.textContent = "↩ Restore";
+    btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
+    btn.onclick = () => restoreAnimal(name);
     row.appendChild(n);
-    if (isManager) {
-      const btn = document.createElement("button");
-      btn.textContent = "↩ Restore";
-      btn.style.cssText = "padding:4px 10px;font-size:13px;background:#555;margin:0;";
-      btn.onclick = () => restoreAnimal(name);
-      row.appendChild(btn);
-    }
+    row.appendChild(btn);
     el.appendChild(row);
   });
 }
@@ -1981,44 +1960,21 @@ function togglePass() {
 
 function renderSync() {
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
-  const isManager = currentRole === "manager";
-
-  // Show/hide connection boxes based on role
-  // Always show full connection form if no URL saved yet (first login for any role)
-  const noUrl = !cfg.url;
-  const managerConn = document.getElementById("managerOnlyConnection");
-  const workerConn = document.getElementById("workerConnection");
-  if (managerConn) managerConn.style.display = (isManager || noUrl) ? "" : "none";
-  if (workerConn) workerConn.style.display = (isManager || noUrl) ? "none" : "";
-
-  if (isManager || noUrl) {
-    if (cfg.url)  document.getElementById("farmosUrl").value  = cfg.url;
-    if (cfg.user) document.getElementById("farmosUser").value = cfg.user;
-    if (cfg.pass) document.getElementById("farmosPass").value = cfg.pass;
-    // Render recent URLs as list with delete buttons
-    renderRecentUrlList();
-    // Auto-fill URL field if only one saved and field is empty
-    const urls = getRecentUrls();
-    const urlEl = document.getElementById("farmosUrl");
-    if (urlEl && !cfg.url && urls.length === 1) {
-      urlEl.value = urls[0];
-    }
-  }
-  if (!isManager && !noUrl) {
-    // Worker view — show farm info read-only
-    const info = document.getElementById("workerFarmInfo");
-    if (info) info.textContent = cfg.url ? `Connected to: ${cfg.url}` : "Not connected";
-  }
+  if (cfg.url)  document.getElementById("farmosUrl").value  = cfg.url;
+  if (cfg.user) document.getElementById("farmosUser").value = cfg.user;
+  if (cfg.pass) document.getElementById("farmosPass").value = cfg.pass;
+  renderRecentUrlList();
+  // Auto-fill if only one saved URL
+  const urls = getRecentUrls();
+  const urlEl = document.getElementById("farmosUrl");
+  if (urlEl && !cfg.url && urls.length === 1) urlEl.value = urls[0];
 
   const unsynced = logs.filter(l => !l.synced).length;
   document.getElementById("unsyncedCount").textContent = unsynced;
   document.getElementById("syncLog").textContent = "";
 
-  // Show user info in settings
   const userInfo = document.getElementById("settingsUserInfo");
-  if (userInfo) userInfo.textContent = cfg.user ? `Logged in as: ${cfg.user} (${currentRole})` : "Not logged in";
-
-  applyRoleUI();
+  if (userInfo) userInfo.textContent = cfg.user ? `Logged in as: ${cfg.user}` : "Not logged in";
 }
 
 function saveFarmOSCfg() {
@@ -2036,8 +1992,8 @@ function saveFarmOSCfg() {
   return cfg;
 }
 
-// ===== SHARED MODULE: OAuth2 — tries farm_manager scope first, falls back to farm_worker =====
-// Role is set from whichever scope succeeds. No config pull during auth.
+// ===== SHARED MODULE: OAuth2 authentication =====
+// Tries proxy first then direct. Returns a valid token or throws.
 async function getToken(cfg) {
   const tryAuth = async (url, scope) => {
     const body = new URLSearchParams({
@@ -2062,66 +2018,23 @@ async function getToken(cfg) {
   const proxyBase  = "/proxy/oauth/token";
   const directBase = cfg.url + "/oauth/token";
 
-  // Try proxy manager, proxy worker, direct manager, direct worker — first success wins
-  const attempts = [
-    [proxyBase,  "farm_manager", true,  "manager"],
-    [proxyBase,  "farm_worker",  true,  "worker"],
-    [directBase, "farm_manager", false, "manager"],
-    [directBase, "farm_worker",  false, "worker"],
-  ];
-
-  for (const [url, scope, useProxy, role] of attempts) {
+  for (const [url, scope, useProxy] of [
+    [proxyBase,  "farm_manager", true],
+    [proxyBase,  "farm_worker",  true],
+    [directBase, "farm_manager", false],
+    [directBase, "farm_worker",  false],
+  ]) {
     try {
       const token = await tryAuth(url, scope);
-      if (token) {
-        window._useProxy = useProxy;
-        currentRole = role;
-        localStorage.setItem(LS.role, role);
-        applyRoleUI();
-        // Re-render sync screen if it is open so connection boxes match new role
-        const syncScreen = document.getElementById("screen-sync");
-        if (syncScreen && syncScreen.classList.contains("active")) renderSync();
-        return token;
-      }
+      if (token) { window._useProxy = useProxy; return token; }
     } catch(e) { /* try next */ }
   }
-
   throw new Error("Auth failed — check credentials and URL");
 }
 function apiUrl(path) {
   return window._useProxy ? "/proxy" + path : (JSON.parse(localStorage.getItem(LS.cfg) || "{}").url || "") + path;
 }
 
-// ===== SHARED MODULE: role-based UI =====
-function applyRoleUI() {
-  const isManager = currentRole === "manager";
-  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
-  const noUrl = !cfg.url;
-  // Manager-only elements — hide for workers
-  const managerOnly = [
-    "managerOnlyFormulas",
-    "managerOnlyAnimals",
-    "managerOnlyLogo",
-    "managerOnlyData",
-    "managerOnlyConnection",
-  ];
-  managerOnly.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    // Always show the connection form if no URL saved yet — needed for first login
-    if (id === "managerOnlyConnection") {
-      el.style.display = (isManager || noUrl) ? "" : "none";
-    } else {
-      el.style.display = isManager ? "" : "none";
-    }
-  });
-  // Show role badge in header
-  const badge = document.getElementById("roleBadge");
-  if (badge) {
-    badge.textContent = isManager ? "Manager" : "Worker";
-    badge.style.color = isManager ? "#3a7" : "#c90";
-  }
-}
 
 // ===== SHARED MODULE: logout =====
 function logout() {
@@ -2162,18 +2075,16 @@ function logout() {
     localStorage.removeItem(LS.animalUUIDs);
     localStorage.removeItem(LS.configLogUUID);
     localStorage.removeItem(LS.lastSync);
+    localStorage.removeItem("farmdesk_role");
     // Reset in-memory state
     logs = [];
     weights = {};
     goats = [...DEFAULT_ANIMALS];
     excludedAnimals = [];
-    currentRole = "worker";
-    localStorage.setItem(LS.role, "worker");
     saveBtn.textContent = "💾 Save";
     saveBtn.style.background = "";
     saveBtn.onclick = saveEdit;
     closeEdit();
-    applyRoleUI();
     populateGoatSelect();
     renderRecent();
     show("sync");
@@ -2403,10 +2314,8 @@ async function fetchAnimalUUIDs(silent = false) {
   const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   if (!cfg.url || !cfg.user || !cfg.pass) {
     if (!silent) {
-      const errEl = currentRole === "manager"
-        ? document.getElementById("farmosTestResult")
-        : document.getElementById("farmosTestResult2");
-      if (errEl) { errEl.textContent = "⚠️ FarmOS not configured."; errEl.style.color = "#c90"; }
+      const el = document.getElementById("farmosTestResult");
+      if (el) { el.textContent = "⚠️ FarmOS not configured."; el.style.color = "#c90"; }
     }
     return;
   }
@@ -2417,17 +2326,10 @@ async function fetchAnimalUUIDs(silent = false) {
   const cfgSaved = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
   if (!cfgSaved.url || !cfgSaved.user || !cfgSaved.pass) return;
 
-  // Result element differs by role
-  let el = currentRole === "manager"
-    ? document.getElementById("farmosTestResult")
-    : document.getElementById("farmosTestResult2");
+  const el = document.getElementById("farmosTestResult");
 
   try {
     const token = await getToken(cfgSaved);
-    // Re-pick result element in case role changed during auth
-    el = currentRole === "manager"
-      ? document.getElementById("farmosTestResult")
-      : document.getElementById("farmosTestResult2");
     const authHeaders = {
       "Authorization": "Bearer " + token,
       "Accept": "application/vnd.api+json"
@@ -2620,10 +2522,8 @@ async function fetchAnimalUUIDs(silent = false) {
 
   } catch(e) {
     if (!silent) {
-      const errEl = currentRole === "manager"
-        ? document.getElementById("farmosTestResult")
-        : document.getElementById("farmosTestResult2");
-      if (errEl) { errEl.textContent = "❌ " + e.message; errEl.style.color = "#c00"; }
+      const el = document.getElementById("farmosTestResult");
+      if (el) { el.textContent = "❌ " + e.message; el.style.color = "#c00"; }
     }
     if (silent) {
       const statusEl = document.getElementById("syncStatus");
@@ -2736,7 +2636,7 @@ function buildFarmOSPayload(l) {
 
 async function syncToFarmOS() {
   // Workers have no URL input fields — read cfg from storage directly
-  const cfg = currentRole === "manager" ? saveFarmOSCfg() : JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+  const cfg = saveFarmOSCfg();
   const logEl = document.getElementById("syncLog");
   logEl.textContent = "Authenticating...\n";
 
@@ -2795,15 +2695,13 @@ async function syncToFarmOS() {
     document.getElementById("unsyncedCount").textContent = logs.filter(l => !l.synced).length;
   }
 
-  // ===== STEP 3: Push shared config — managers only =====
-  if (currentRole === "manager") {
-    logEl.textContent += "Pushing config...\n";
-    try {
-      await pushConfig(token);
-      logEl.textContent += "✅ Config synced\n";
-    } catch(e) {
-      logEl.textContent += "⚠️ Config push failed: " + e.message + "\n";
-    }
+  // ===== STEP 3: Push shared config =====
+  logEl.textContent += "Pushing config...\n";
+  try {
+    await pushConfig(token);
+    logEl.textContent += "✅ Config synced\n";
+  } catch(e) {
+    logEl.textContent += "⚠️ Config push failed: " + e.message + "\n";
   }
 
   logEl.scrollTop = logEl.scrollHeight;
@@ -3084,8 +2982,6 @@ logs.forEach(l => {
 localStorage.setItem(LS.logs, JSON.stringify(logs));
 populateGoatSelect();
 renderRecent();
-applyRoleUI();
-
 // Show last sync time in status bar
 const lastSync = localStorage.getItem(LS.lastSync);
 const statusEl = document.getElementById("syncStatus");
