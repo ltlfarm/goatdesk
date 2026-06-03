@@ -464,8 +464,7 @@ let formulas = JSON.parse(localStorage.getItem(LS.formulas) || "null") || {
   "UltraBoss":       { dose: 0.03,  unit: "ml",  route: "Topical", round: "none", fixed: false }
 };
 
-// ===== ROLE & SESSION =====
-// ===== SHARED MODULE: role detection — manager vs worker =====
+// ===== SESSION =====
 let sessionDoseRate = null; // ml/lb — persists through med flow, null = use formula default
 window.addEventListener("popstate", () => {
   const active = document.querySelector(".screen.active");
@@ -2003,14 +2002,23 @@ async function getToken(cfg) {
       password:   cfg.pass,
       scope
     });
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.access_token;
+    // 5 second timeout per attempt — prevents hanging when proxy is unavailable
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        return data.access_token;
+      }
+    } catch(e) {
+      clearTimeout(timer);
     }
     return null;
   };
@@ -2026,7 +2034,12 @@ async function getToken(cfg) {
   ]) {
     try {
       const token = await tryAuth(url, scope);
-      if (token) { window._useProxy = useProxy; return token; }
+      if (token) {
+        window._useProxy = useProxy;
+        // Track whether this is a manager-scope token so push can decide on config sync
+        window._isManagerScope = (scope === "farm_manager");
+        return token;
+      }
     } catch(e) { /* try next */ }
   }
   throw new Error("Auth failed — check credentials and URL");
@@ -2067,7 +2080,6 @@ function logout() {
     }
     // Clear farm-specific data
     localStorage.removeItem(LS.cfg);
-    localStorage.removeItem(LS.role);
     localStorage.removeItem(LS.logs);
     localStorage.removeItem(LS.weights);
     localStorage.removeItem(LS.goats);
@@ -2075,7 +2087,7 @@ function logout() {
     localStorage.removeItem(LS.animalUUIDs);
     localStorage.removeItem(LS.configLogUUID);
     localStorage.removeItem(LS.lastSync);
-    localStorage.removeItem("farmdesk_role");
+    localStorage.removeItem("farmdesk_role"); // clean up any legacy role key
     // Reset in-memory state
     logs = [];
     weights = {};
@@ -2635,7 +2647,6 @@ function buildFarmOSPayload(l) {
 }
 
 async function syncToFarmOS() {
-  // Workers have no URL input fields — read cfg from storage directly
   const cfg = saveFarmOSCfg();
   const logEl = document.getElementById("syncLog");
   logEl.textContent = "Authenticating...\n";
@@ -2695,13 +2706,15 @@ async function syncToFarmOS() {
     document.getElementById("unsyncedCount").textContent = logs.filter(l => !l.synced).length;
   }
 
-  // ===== STEP 3: Push shared config =====
-  logEl.textContent += "Pushing config...\n";
-  try {
-    await pushConfig(token);
-    logEl.textContent += "✅ Config synced\n";
-  } catch(e) {
-    logEl.textContent += "⚠️ Config push failed: " + e.message + "\n";
+  // ===== STEP 3: Push shared config — only if manager scope was granted =====
+  if (window._isManagerScope) {
+    logEl.textContent += "Pushing config...\n";
+    try {
+      await pushConfig(token);
+      logEl.textContent += "✅ Config synced\n";
+    } catch(e) {
+      logEl.textContent += "⚠️ Config push failed: " + e.message + "\n";
+    }
   }
 
   logEl.scrollTop = logEl.scrollHeight;
