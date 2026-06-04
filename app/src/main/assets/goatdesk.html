@@ -2684,9 +2684,42 @@ async function syncToFarmOS() {
       try {
         const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
         if (res.ok) {
+          const resData = await res.json();
+          const logUUID = resData?.data?.id;
+
+          // ===== PHOTO UPLOAD =====
+          // farmOS 2.x requires a separate POST of binary data to upload a photo.
+          // Endpoint: POST /api/log/{type}/{uuid}/image
+          // Content-Type: application/octet-stream
+          // Content-Disposition: attachment; filename="photo.jpg"
+          // Body: raw binary (converted from base64)
+          if (l.data?.photo && logUUID) {
+            try {
+              // Convert base64 data URL to binary blob
+              const photoRes = await fetch(l.data.photo);
+              const blob = await photoRes.blob();
+              const photoUrl = apiUrl(`/api/log/${farmosType}/${logUUID}/image`);
+              const photoUpload = await fetch(photoUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type":        "application/octet-stream",
+                  "Content-Disposition": 'attachment; filename="goatdesk-photo.jpg"',
+                  "Accept":              "application/vnd.api+json",
+                  "Authorization":       "Bearer " + token
+                },
+                body: blob
+              });
+              if (!photoUpload.ok) {
+                logEl.textContent += `  ⚠️ Photo upload failed: ${photoUpload.status}\n`;
+              }
+            } catch(pe) {
+              logEl.textContent += `  ⚠️ Photo upload error: ${pe.message}\n`;
+            }
+          }
+
           l.synced = true;
           ok++;
-          logEl.textContent += `✅ ${l.goat} | ${farmosLogName(l)}\n`;
+          logEl.textContent += `✅ ${l.goat} | ${farmosLogName(l)}${l.data?.photo ? " 📷" : ""}\n`;
         } else {
           const txt = await res.text();
           fail++;
