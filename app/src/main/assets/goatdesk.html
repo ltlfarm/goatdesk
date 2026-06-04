@@ -2397,17 +2397,27 @@ async function fetchAnimalUUIDs(silent = false) {
     // ===== STEP 3: Fetch recent logs =====
     if (!silent && el) el.textContent = "Fetching recent logs...";
 
+    // include=image fetches the image file data alongside each log in one request
     const [actRes, obsRes, medRes, maintRes] = await Promise.all([
-      fetch(apiUrl("/api/log/activity?page[limit]=200&sort=-timestamp"),    { headers: authHeaders }),
-      fetch(apiUrl("/api/log/observation?page[limit]=200&sort=-timestamp"), { headers: authHeaders }),
-      fetch(apiUrl("/api/log/medical?page[limit]=200&sort=-timestamp"),     { headers: authHeaders }),
-      fetch(apiUrl("/api/log/maintenance?page[limit]=200&sort=-timestamp"), { headers: authHeaders })
+      fetch(apiUrl("/api/log/activity?page[limit]=200&sort=-timestamp&include=image"),    { headers: authHeaders }),
+      fetch(apiUrl("/api/log/observation?page[limit]=200&sort=-timestamp&include=image"), { headers: authHeaders }),
+      fetch(apiUrl("/api/log/medical?page[limit]=200&sort=-timestamp&include=image"),     { headers: authHeaders }),
+      fetch(apiUrl("/api/log/maintenance?page[limit]=200&sort=-timestamp&include=image"), { headers: authHeaders })
     ]);
 
     const allLogs = [];
+    const imageUrlMap = {}; // file UUID -> absolute URL, built from included array
     for (const res of [actRes, obsRes, medRes, maintRes]) {
       if (res.ok) {
         const d = await res.json();
+        // Build image URL map from the included file entities
+        (d.included || []).forEach(inc => {
+          if (inc.type === "file--file" && inc.attributes?.uri?.url) {
+            // uri.url may be relative — make it absolute
+            const url = inc.attributes.uri.url;
+            imageUrlMap[inc.id] = url.startsWith("http") ? url : (cfg.url + url);
+          }
+        });
         (d.data || []).forEach(l => {
           // Skip the config log
           if (l.attributes?.name === CONFIG_LOG_NAME) return;
@@ -2477,7 +2487,16 @@ async function fetchAnimalUUIDs(silent = false) {
                   }
                   return new Date().toISOString();
                 })(),
-        data:   parseFarmOSNotes(log.type, attrs.name, attrs.notes?.value || "", attrs.quantity || []),
+        data:   (() => {
+                  const parsed = parseFarmOSNotes(log.type, attrs.name, attrs.notes?.value || "", attrs.quantity || []);
+                  // Attach first image URL if one was uploaded with this log
+                  const imageRel = log.relationships?.image?.data;
+                  const imageArr = Array.isArray(imageRel) ? imageRel : (imageRel ? [imageRel] : []);
+                  if (imageArr.length > 0 && imageUrlMap[imageArr[0].id]) {
+                    parsed.photo = imageUrlMap[imageArr[0].id];
+                  }
+                  return parsed;
+                })(),
         synced: true,
         fromFarmOS: true,
         status: attrs.status === "pending" ? "pending" : "done",
