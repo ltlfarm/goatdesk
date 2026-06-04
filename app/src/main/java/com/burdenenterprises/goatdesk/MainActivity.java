@@ -2,16 +2,21 @@ package com.burdenenterprises.goatdesk;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.util.Base64;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.core.content.FileProvider;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -23,8 +28,9 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraImageUri;
+    private String cameraJsCallback;
     private static final int FILE_CHOOSER_REQUEST = 1;
-    private static final int CAMERA_REQUEST       = 2;
+    private static final int CAMERA_BRIDGE_REQUEST = 3;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,6 +50,7 @@ public class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         webView.setWebViewClient(new WebViewClient());
+        webView.addJavascriptInterface(new AndroidBridge(), "AndroidBridge");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -51,27 +58,6 @@ public class MainActivity extends Activity {
                     FileChooserParams params) {
                 if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                 filePathCallback = callback;
-
-                // Check if this is a camera capture request (capture="environment")
-                // FileChooserParams.getMode() == MODE_OPEN and accept types contain image/*
-                // and isCaptureEnabled() is true when capture attribute is set
-                if (params.isCaptureEnabled()) {
-                    // Launch camera directly — bypass system picker
-                    try {
-                        File photoFile = createImageFile();
-                        cameraImageUri = FileProvider.getUriForFile(
-                            MainActivity.this,
-                            "com.burdenenterprises.goatdesk.fileprovider",
-                            photoFile
-                        );
-                        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                        cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
-                        startActivityForResult(cameraIntent, CAMERA_REQUEST);
-                        return true;
-                    } catch (Exception e) {
-                        // Fall through to system picker if camera launch fails
-                    }
-                }
 
                 // Gallery / file picker — use system chooser
                 Intent intent = params.createIntent();
@@ -88,6 +74,28 @@ public class MainActivity extends Activity {
         webView.loadUrl("file:///android_asset/goatdesk.html");
     }
 
+    // ===== ANDROID CAMERA BRIDGE =====
+    // Called directly from JS — bypasses Samsung's photo picker
+    public class AndroidBridge {
+        @JavascriptInterface
+        public void takePhoto(String jsCallback) {
+            try {
+                cameraJsCallback = jsCallback;
+                File photoFile = createImageFile();
+                cameraImageUri = FileProvider.getUriForFile(
+                    MainActivity.this,
+                    "com.burdenenterprises.goatdesk.fileprovider",
+                    photoFile
+                );
+                Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
+                startActivityForResult(intent, CAMERA_BRIDGE_REQUEST);
+            } catch (Exception e) {
+                cameraJsCallback = null;
+            }
+        }
+    }
+
     private File createImageFile() throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
         File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
@@ -96,20 +104,32 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (filePathCallback == null) return;
 
-        if (requestCode == CAMERA_REQUEST) {
+        // Camera bridge result — encode image and call JS callback
+        if (requestCode == CAMERA_BRIDGE_REQUEST) {
             if (resultCode == RESULT_OK && cameraImageUri != null) {
-                filePathCallback.onReceiveValue(new Uri[]{ cameraImageUri });
-            } else {
-                filePathCallback.onReceiveValue(null);
+                try {
+                    Bitmap bmp = BitmapFactory.decodeStream(
+                        getContentResolver().openInputStream(cameraImageUri));
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos);
+                    String b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+                    final String dataUrl = "data:image/jpeg;base64," + b64;
+                    final String cb = cameraJsCallback != null ? cameraJsCallback : "onAndroidPhoto";
+                    webView.post(() ->
+                        webView.evaluateJavascript(cb + "('" + dataUrl + "')", null));
+                } catch (Exception e) {
+                    // Silently fail — user can try gallery instead
+                }
             }
-            filePathCallback = null;
             cameraImageUri = null;
+            cameraJsCallback = null;
             return;
         }
 
+        // Gallery / file chooser result
         if (requestCode == FILE_CHOOSER_REQUEST) {
+            if (filePathCallback == null) return;
             Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
             filePathCallback.onReceiveValue(results);
             filePathCallback = null;

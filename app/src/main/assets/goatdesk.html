@@ -844,7 +844,7 @@ function renderStep() {
 
       <label>Photo / File</label>
       <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
-        <button type="button" onclick="document.getElementById('f_hoofcamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="takeCameraBridge()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
         <button type="button" onclick="document.getElementById('f_hoofphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
         <button type="button" onclick="document.getElementById('f_hooffile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
         <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
@@ -895,7 +895,7 @@ function renderStep() {
 
       <label>Photo / File</label>
       <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
-        <button type="button" onclick="document.getElementById('f_obscamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="takeCameraBridge()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
         <button type="button" onclick="document.getElementById('f_obsphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
         <button type="button" onclick="document.getElementById('f_obsfile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
         <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
@@ -950,7 +950,7 @@ function renderStep() {
 
       <label>Photo / File</label>
       <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
-        <button type="button" onclick="document.getElementById('f_birthcamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="takeCameraBridge()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
         <button type="button" onclick="document.getElementById('f_birthphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
         <button type="button" onclick="document.getElementById('f_birthfile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
         <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
@@ -1012,7 +1012,7 @@ function renderStep() {
 
       <label>Photo / File</label>
       <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
-        <button type="button" onclick="document.getElementById('f_proccamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="takeCameraBridge()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
         <button type="button" onclick="document.getElementById('f_procphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
         <button type="button" onclick="document.getElementById('f_procfile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
         <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
@@ -1048,6 +1048,43 @@ function renderStep() {
     if (el) { el.focus(); if (el.select && el.type !== "number") el.select(); }
     renderLock = false;
   }, 120);
+}
+
+// ===== ANDROID CAMERA BRIDGE =====
+// Called by 📷 Camera buttons — bypasses Samsung's photo picker entirely
+function takeCameraBridge() {
+  if (window.AndroidBridge && window.AndroidBridge.takePhoto) {
+    window.AndroidBridge.takePhoto("onAndroidPhoto");
+  } else {
+    // Fallback: try capture input if bridge not available (PWA/browser)
+    const inputs = ["f_proccamera","f_hoofcamera","f_obscamera","f_birthcamera"];
+    for (const id of inputs) {
+      const el = document.getElementById(id);
+      if (el) { el.click(); break; }
+    }
+  }
+}
+
+// Called by Java bridge with base64 jpeg data URL
+function onAndroidPhoto(dataUrl) {
+  if (!dataUrl) return;
+  const full = dataUrl.startsWith("data:") ? dataUrl : "data:image/jpeg;base64," + dataUrl;
+  // Resize same as handlePhoto
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    const maxW = 800;
+    const ratio = Math.min(1, maxW / img.width);
+    canvas.width  = img.width  * ratio;
+    canvas.height = img.height * ratio;
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    currentPhoto = canvas.toDataURL("image/jpeg", 0.7);
+    const preview = document.getElementById("photoPreview");
+    if (preview) preview.innerHTML = `<img src="${currentPhoto}" style="width:100%;border-radius:6px;margin-top:4px;">`;
+    const clearBtn = document.getElementById("clearPhotoBtn");
+    if (clearBtn) clearBtn.style.display = "inline-block";
+  };
+  img.src = full;
 }
 
 // ===== PHOTO HANDLING =====
@@ -1540,13 +1577,18 @@ function makeLogEl(l, showActions = false) {
   const d = document.createElement("div");
   d.className = "log " + logColor(l);
   d.dataset.logId = l.id;
+  d.style.cursor = "pointer";
+  d.onclick = function(e) {
+    if (e.target.closest("button") || e.target.closest("input")) return;
+    toggleLogDrawer(this);
+  };
   const t = l.time ? (new Date(l.time).toString() !== "Invalid Date" ? new Date(l.time).toLocaleString() : "unknown time") : "unknown time";
   const statusTag = l.status === "pending" ? " \u23F0 scheduled" : (l.synced ? " \u2713 synced" : "");
   const detail = formatLog(l);
 
   // Collapsed header — always visible
   d.innerHTML = `
-    <div class="log-top" style="cursor:pointer;" onclick="toggleLogDrawer(this)">
+    <div class="log-top">
       ${showActions ? `<input type="checkbox" class="log-select" data-id="${l.id}" style="width:auto;margin:0 8px 0 0;" onclick="event.stopPropagation()">` : ""}
       <span class="log-animal">${l.goat}</span>
       <span class="log-type">${l.type}</span>
@@ -1590,8 +1632,8 @@ function makeLogEl(l, showActions = false) {
   return d;
 }
 
-function toggleLogDrawer(headerEl) {
-  const card = headerEl.closest(".log");
+function toggleLogDrawer(el) {
+  const card = el.classList.contains("log") ? el : el.closest(".log");
   if (!card) return;
   const drawer = card.querySelector(".log-drawer");
   const preview = card.querySelector(".log-preview");
@@ -2228,48 +2270,30 @@ function showToast(msg) {
 
 // ===== SHARED MODULE: fullscreen photo viewer with pinch-zoom =====
 let _viewerScale = 1;
-let _viewerTX = 0, _viewerTY = 0;         // current translate offsets
 let _viewerLastDist = 0;
-let _viewerPinchMidX = 0, _viewerPinchMidY = 0; // pinch midpoint in image coords at gesture start
-let _viewerTXstart = 0, _viewerTYstart = 0;      // translate at gesture start
-let _viewerScaleStart = 1;
-let _viewerPanStartX = 0, _viewerPanStartY = 0;  // single-finger pan start
-
-function _viewerApply(img) {
-  img.style.transform = `translate(${_viewerTX}px, ${_viewerTY}px) scale(${_viewerScale})`;
-}
+let _viewerOriginX = 0;
+let _viewerOriginY = 0;
 
 function openPhotoViewer(src) {
   const viewer = document.getElementById("photoViewer");
   const img    = document.getElementById("photoViewerImg");
   if (!viewer || !img || !src) return;
-  _viewerScale = 1; _viewerTX = 0; _viewerTY = 0;
-  img.style.transformOrigin = "center center";
-  img.style.transform = "translate(0px,0px) scale(1)";
+  _viewerScale = 1;
+  img.style.transform = "scale(1)";
   img.src = src;
   viewer.classList.add("open");
-
+  // Pinch-zoom touch handlers
   viewer.ontouchstart = e => {
     if (e.touches.length === 2) {
       _viewerLastDist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      _viewerScaleStart = _viewerScale;
-      _viewerTXstart    = _viewerTX;
-      _viewerTYstart    = _viewerTY;
-      // Midpoint in screen coords relative to viewer center
-      const vr = viewer.getBoundingClientRect();
-      _viewerPinchMidX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - (vr.left + vr.width  / 2);
-      _viewerPinchMidY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - (vr.top  + vr.height / 2);
-      e.preventDefault();
-    } else if (e.touches.length === 1 && _viewerScale > 1) {
-      _viewerPanStartX = e.touches[0].clientX - _viewerTX;
-      _viewerPanStartY = e.touches[0].clientY - _viewerTY;
+      _viewerOriginX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      _viewerOriginY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       e.preventDefault();
     }
   };
-
   viewer.ontouchmove = e => {
     if (e.touches.length === 2) {
       const dist = Math.hypot(
@@ -2277,36 +2301,17 @@ function openPhotoViewer(src) {
         e.touches[0].clientY - e.touches[1].clientY
       );
       if (_viewerLastDist > 0) {
-        const s = Math.min(Math.max(_viewerScale * (dist / _viewerLastDist), 1), 6);
-        // Adjust translate so pinch midpoint stays fixed on screen
-        const ds = s / _viewerScale;
-        _viewerTX = _viewerPinchMidX + (_viewerTX - _viewerPinchMidX) * ds;
-        _viewerTY = _viewerPinchMidY + (_viewerTY - _viewerPinchMidY) * ds;
-        _viewerScale = s;
-        // Clamp pan
-        const maxT = (img.offsetWidth  * (_viewerScale - 1)) / 2;
-        const maxTY= (img.offsetHeight * (_viewerScale - 1)) / 2;
-        _viewerTX = Math.min(Math.max(_viewerTX, -maxT),  maxT);
-        _viewerTY = Math.min(Math.max(_viewerTY, -maxTY), maxTY);
-        _viewerApply(img);
+        _viewerScale *= dist / _viewerLastDist;
+        _viewerScale = Math.min(Math.max(_viewerScale, 1), 6);
+        img.style.transformOrigin = `${_viewerOriginX}px ${_viewerOriginY}px`;
+        img.style.transform = `scale(${_viewerScale})`;
       }
       _viewerLastDist = dist;
       e.preventDefault();
-    } else if (e.touches.length === 1 && _viewerScale > 1) {
-      _viewerTX = e.touches[0].clientX - _viewerPanStartX;
-      _viewerTY = e.touches[0].clientY - _viewerPanStartY;
-      const maxT = (img.offsetWidth  * (_viewerScale - 1)) / 2;
-      const maxTY= (img.offsetHeight * (_viewerScale - 1)) / 2;
-      _viewerTX = Math.min(Math.max(_viewerTX, -maxT),  maxT);
-      _viewerTY = Math.min(Math.max(_viewerTY, -maxTY), maxTY);
-      _viewerApply(img);
-      e.preventDefault();
     }
   };
-
   viewer.ontouchend = e => {
     if (e.touches.length < 2) _viewerLastDist = 0;
-    if (_viewerScale <= 1) { _viewerTX = 0; _viewerTY = 0; _viewerApply(img); }
   };
 }
 
