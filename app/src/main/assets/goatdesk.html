@@ -196,6 +196,7 @@ input:focus, select:focus, textarea:focus {
       <button onclick="show('history')" class="secondary">📋 History</button>
       <button onclick="show('settings')" class="secondary">⚙️ Settings</button>
       <button onclick="show('animals')" class="secondary">🐐 Animals</button>
+      <button onclick="show('scheduler')" class="secondary">📅 Scheduler</button>
       <button onclick="show('sync')" class="secondary">🔄 FarmOS Sync</button>
     </div>
   </div>
@@ -233,7 +234,8 @@ input:focus, select:focus, textarea:focus {
   <div class="box" id="inputs"></div>
 
   <div class="box" style="display:flex;gap:8px;">
-    <button onclick="nextAction()" style="flex:1;">💾 Save + Next</button>
+    <button onclick="saveAndHome()" style="flex:1;">💾 Save</button>
+    <button id="saveNextBtn" onclick="nextAction()" style="flex:1;">➡️ Save + Next</button>
     <button class="secondary" onclick="show('home')" style="flex:0 0 auto;">Home</button>
   </div>
 </div>
@@ -350,6 +352,48 @@ input:focus, select:focus, textarea:focus {
     <button onclick="logout()" class="wide secondary">🚪 Log Out</button>
   </div>
 
+</div>
+
+<!-- ===== SCHEDULER ===== -->
+<div id="screen-scheduler" class="screen">
+  <div class="box">
+    <button class="secondary" onclick="show('home')">← Home</button>
+    <h3 style="margin:10px 0 4px;">📅 Task Scheduler</h3>
+    <p style="color:#888;font-size:13px;margin:0 0 8px;">Create pending tasks for future work. Select multiple animals to create one task each.</p>
+  </div>
+
+  <div class="box">
+    <label>Log Type</label>
+    <select id="sch_type" onchange="renderSchedulerTypeFields()">
+      <option value="med">💉 Med</option>
+      <option value="obs">👁️ Observation</option>
+      <option value="hoof">Hoof</option>
+      <option value="proc">✂️ Procedure</option>
+      <option value="birth">🐐🍼 Birth</option>
+      <option value="activity">📝 Activity</option>
+    </select>
+
+    <label>Animals <span style="color:#888;font-size:12px;">(tap to select multiple)</span></label>
+    <div id="sch_animals" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button type="button" onclick="schSelectAll()" style="flex:1;margin:0;padding:8px;font-size:13px;background:#333;">Select All</button>
+      <button type="button" onclick="schClearAll()" style="flex:1;margin:0;padding:8px;font-size:13px;background:#333;">Clear</button>
+    </div>
+
+    <label>Date &amp; Time</label>
+    <div style="display:flex;gap:6px;margin-top:4px;">
+      <input type="datetime-local" id="sch_time" style="flex:1;">
+      <button onclick="schSetNow()" style="padding:10px;margin:0;font-size:13px;">Now</button>
+    </div>
+
+    <div id="sch_type_fields" style="margin-top:4px;"></div>
+
+    <label>Notes</label>
+    <textarea id="sch_notes" placeholder="Optional notes" rows="2" style="width:100%;margin-top:4px;"></textarea>
+
+    <button onclick="saveScheduledTasks()" style="width:100%;margin-top:12px;">📅 Schedule Tasks</button>
+    <div id="sch_result" style="font-size:13px;color:#888;margin-top:8px;"></div>
+  </div>
 </div>
 
 <!-- ===== ANIMALS ===== -->
@@ -509,6 +553,7 @@ function show(id) {
   if (id === "settings") { renderSettings(); }
   if (id === "sync") { renderSync(); }
   if (id === "animals") { renderAnimalsScreen(); }
+  if (id === "scheduler") { renderScheduler(); }
 }
 
 // ===== FLOW =====
@@ -532,7 +577,7 @@ const TYPE_LABELS = {
   vitals:   "❤️ Vitals",
   med:      "💊 Medication",
   proc:     "🔧 Procedure",
-  hoof:     "🦶 Hoof",
+  hoof:     "Hoof",
   obs:      "👁️ Observation",
   birth:    "🐣 Birth",
   activity: "📝 Activity"
@@ -542,6 +587,9 @@ function startFlow(type) {
   flow = FLOWS[type] || [type];
   step = 0;
   herdIndex = 0;
+  _activeTaskId = null; // clear any active task
+  const saveNextBtn = document.getElementById("saveNextBtn");
+  if (saveNextBtn) saveNextBtn.style.display = "";
   populateGoatSelect();
   setNow();
   show("entry");
@@ -1391,8 +1439,25 @@ function saveStep() {
   }
 
   logs.push(entry);
+
+  // If this log was opened from a pending task, mark that task done
+  if (_activeTaskId) {
+    const task = logs.find(l => l.id === _activeTaskId);
+    if (task) {
+      task.status = "done";
+      task.synced = false;
+    }
+    _activeTaskId = null;
+  }
+
   localStorage.setItem(LS.logs, JSON.stringify(logs));
   return true;
+}
+
+// Save current step and go home — used by plain Save button and task form saves
+function saveAndHome() {
+  if (!saveStep()) return;
+  show("home");
 }
 
 function nextAction() {
@@ -1429,7 +1494,7 @@ function formatLog(l) {
   }
   else if (l.type === "med")  out = (l.data.med || "") + " " + (l.data.dose || "") + " " + (l.data.unit || "ml") + " via " + (l.data.route || "");
   else if (l.type === "proc") out = (l.data.proc || "Procedure") + (l.data.method ? " — " + l.data.method : "");
-  else if (l.type === "hoof") out = (l.data.state || "?");
+  else if (l.type === "hoof") out = l.data.state || "";
   else if (l.type === "obs") {
     // If title and note are the same (fetched back from farmOS), show title only
     const obsTitle = (l.data.title || "").trim();
@@ -1487,7 +1552,7 @@ function makeLogEl(l, showActions = false) {
       <span class="log-type">${l.type}</span>
       <span class="log-arrow" style="margin-left:auto;color:#555;font-size:14px;">\u25BC</span>
     </div>
-    <div class="log-detail log-preview">${detail}</div>
+    ${detail ? `<div class="log-detail log-preview">${detail}</div>` : ""}
     <div class="log-time">${t}${l.loggedBy ? " \u00B7 " + l.loggedBy : ""}${statusTag}</div>
     <div class="log-drawer" style="display:none;">
       ${l.data && l.data.photo ? `<img src="${l.data.photo}" data-photo-src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;cursor:zoom-in;" onclick="openPhotoViewer(this.src||this.dataset.photoSrc)" onerror="loadPhotoWithAuth(this)">` : ""}
@@ -1499,21 +1564,26 @@ function makeLogEl(l, showActions = false) {
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;";
     if (l.status === "pending") {
-      const completeBtn = document.createElement("button");
-      completeBtn.textContent = "\u2705 Complete";
-      completeBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#1b4d1e;";
-      completeBtn.onclick = () => completeTask(l.id);
-      actions.appendChild(completeBtn);
+      const openBtn = document.createElement("button");
+      openBtn.textContent = "📋 Log It";
+      openBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#1b5e8e;";
+      openBtn.onclick = () => openTaskForm(l.id);
+      actions.appendChild(openBtn);
     }
     const editBtn = document.createElement("button");
     editBtn.textContent = "\u270F\uFE0F Edit";
     editBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;";
     editBtn.onclick = () => openEdit(l.id);
+    const cloneBtn = document.createElement("button");
+    cloneBtn.textContent = "⧉ Clone";
+    cloneBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#4a3a7a;";
+    cloneBtn.onclick = () => cloneLog(l.id);
     const delBtn = document.createElement("button");
     delBtn.textContent = "🗑️ Delete";
     delBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#8b0000;";
     delBtn.onclick = () => deleteLog(l.id);
     actions.appendChild(editBtn);
+    actions.appendChild(cloneBtn);
     actions.appendChild(delBtn);
     drawer.appendChild(actions);
   }
@@ -1854,6 +1924,306 @@ function addAnimalFromScreen() {
   localStorage.setItem(LS.goats, JSON.stringify(goats));
   populateGoatSelect();
   renderAnimalsScreen();
+}
+
+
+// ===== TASK → FORM (open pending task pre-filled in entry form) =====
+// taskId is stored globally so saveStep can mark it done on save
+let _activeTaskId = null;
+
+function openTaskForm(id) {
+  const task = logs.find(l => l.id === id);
+  if (!task) return;
+  _activeTaskId = id;
+
+  // Start the matching flow type
+  startFlow(task.type);
+
+  // Pre-fill animal
+  const goatSel = document.getElementById("goat");
+  if (goatSel) {
+    const idx = goats.indexOf(task.goat);
+    if (idx >= 0) { goatSel.selectedIndex = idx; herdIndex = idx; }
+  }
+
+  // Pre-fill time to now (task time was the scheduled time, log time is now)
+  setNow();
+
+  // Hide Save+Next for task forms — task should just be logged once and go home
+  const saveNextBtn = document.getElementById("saveNextBtn");
+  if (saveNextBtn) saveNextBtn.style.display = "none";
+
+  // Pre-fill type-specific fields after a tick so renderStep has run
+  setTimeout(() => {
+    const d = task.data || {};
+    if (task.type === "med") {
+      const medEl = document.getElementById("f_med");
+      if (medEl && d.med) { medEl.value = d.med; calcDose(); }
+      const notesEl = document.getElementById("f_mednotes");
+      if (notesEl && d.notes) notesEl.value = d.notes;
+    }
+    if (task.type === "obs") {
+      const titleEl = document.getElementById("f_obstitle");
+      if (titleEl && d.title) titleEl.value = d.title;
+      const noteEl = document.getElementById("f_obs");
+      if (noteEl && d.note) noteEl.value = d.note;
+      const sevEl = document.getElementById("f_sev");
+      if (sevEl && d.sev) sevEl.value = d.sev;
+    }
+    if (task.type === "hoof") {
+      const stateEl = document.getElementById("f_hoof");
+      if (stateEl && d.state) stateEl.value = d.state;
+      const notesEl = document.getElementById("f_hoofnotes");
+      if (notesEl && d.notes) notesEl.value = d.notes;
+    }
+    if (task.type === "proc") {
+      const procEl = document.getElementById("f_proc");
+      if (procEl && d.proc) procEl.value = d.proc;
+      const methodEl = document.getElementById("f_procmethod");
+      if (methodEl && d.method) methodEl.value = d.method;
+      const notesEl = document.getElementById("f_procnotes");
+      if (notesEl && d.notes) notesEl.value = d.notes;
+    }
+    if (task.type === "activity") {
+      const titleEl = document.getElementById("f_actitle");
+      if (titleEl && d.title) titleEl.value = d.title;
+      const descEl = document.getElementById("f_acdesc");
+      if (descEl && d.desc) descEl.value = d.desc;
+    }
+  }, 50);
+}
+
+// ===== CLONE LOG =====
+function cloneLog(id) {
+  const orig = logs.find(l => l.id === id);
+  if (!orig) return;
+  const clone = JSON.parse(JSON.stringify(orig));
+  clone.id = Date.now() + "c" + Math.random().toString(36).slice(2,7);
+  clone.time = new Date().toISOString();
+  clone.synced = false;
+  clone.fromFarmOS = false;
+  clone.status = "done";
+  // Don't clone photo URLs from farmOS — they'd be stale
+  if (clone.data && clone.data.photo && clone.fromFarmOS) clone.data.photo = null;
+  logs.push(clone);
+  localStorage.setItem(LS.logs, JSON.stringify(logs));
+  renderRecent();
+  renderHistory();
+  showToast("Cloned — edit if needed, then push");
+}
+
+// ===== SCHEDULER =====
+function renderScheduler() {
+  // Populate animal chips
+  const container = document.getElementById("sch_animals");
+  if (!container) return;
+  container.innerHTML = "";
+  goats.forEach(g => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.textContent = g;
+    chip.dataset.animal = g;
+    chip.style.cssText = "padding:6px 10px;font-size:13px;margin:0;background:#333;border-radius:16px;";
+    chip.onclick = () => {
+      chip.style.background = chip.style.background === "rgb(26, 93, 26)" ? "#333" : "rgb(26, 93, 26)";
+    };
+    container.appendChild(chip);
+  });
+
+  // Set default time to tomorrow 8am
+  const tom = new Date();
+  tom.setDate(tom.getDate() + 1);
+  tom.setHours(8, 0, 0, 0);
+  const local = new Date(tom.getTime() - tom.getTimezoneOffset() * 60000);
+  const timeEl = document.getElementById("sch_time");
+  if (timeEl) timeEl.value = local.toISOString().slice(0, 16);
+
+  renderSchedulerTypeFields();
+  document.getElementById("sch_result").textContent = "";
+  document.getElementById("sch_notes").value = "";
+}
+
+function schSetNow() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  const timeEl = document.getElementById("sch_time");
+  if (timeEl) timeEl.value = local.toISOString().slice(0, 16);
+}
+
+function schSelectAll() {
+  document.querySelectorAll("#sch_animals button").forEach(b => {
+    b.style.background = "rgb(26, 93, 26)";
+  });
+}
+
+function schClearAll() {
+  document.querySelectorAll("#sch_animals button").forEach(b => {
+    b.style.background = "#333";
+  });
+}
+
+function renderSchedulerTypeFields() {
+  const type = document.getElementById("sch_type")?.value;
+  const fields = document.getElementById("sch_type_fields");
+  if (!fields) return;
+  fields.innerHTML = "";
+
+  if (type === "med") {
+    // Med name dropdown from formulas + custom
+    const label = document.createElement("label");
+    label.textContent = "Medication";
+    const sel = document.createElement("select");
+    sel.id = "sch_med";
+    sel.style.cssText = "width:100%;margin-top:4px;margin-bottom:6px;";
+    const customOpt = document.createElement("option");
+    customOpt.value = "_custom";
+    customOpt.textContent = "— Custom —";
+    sel.appendChild(customOpt);
+    Object.keys(formulas).forEach(name => {
+      const o = document.createElement("option");
+      o.value = name; o.textContent = name;
+      sel.appendChild(o);
+    });
+    const customInput = document.createElement("input");
+    customInput.id = "sch_med_custom";
+    customInput.placeholder = "Custom medication name";
+    customInput.style.cssText = "display:none;margin-top:4px;";
+    sel.onchange = () => {
+      customInput.style.display = sel.value === "_custom" ? "" : "none";
+    };
+    fields.appendChild(label);
+    fields.appendChild(sel);
+    fields.appendChild(customInput);
+  }
+
+  if (type === "obs") {
+    const label = document.createElement("label");
+    label.textContent = "Title";
+    const input = document.createElement("input");
+    input.id = "sch_obs_title";
+    input.placeholder = "Brief observation title";
+    input.style.marginTop = "4px";
+    fields.appendChild(label);
+    fields.appendChild(input);
+  }
+
+  if (type === "proc") {
+    const label = document.createElement("label");
+    label.textContent = "Procedure";
+    const sel = document.createElement("select");
+    sel.id = "sch_proc";
+    sel.style.cssText = "width:100%;margin-top:4px;margin-bottom:6px;";
+    ["Band","Disbud","Ear Tag","Tattoo","Wean"].forEach(p => {
+      const o = document.createElement("option"); o.value = p; o.textContent = p;
+      sel.appendChild(o);
+    });
+    const customOpt = document.createElement("option");
+    customOpt.value = "_custom"; customOpt.textContent = "— Custom —";
+    sel.appendChild(customOpt);
+    const customInput = document.createElement("input");
+    customInput.id = "sch_proc_custom";
+    customInput.placeholder = "Custom procedure";
+    customInput.style.cssText = "display:none;margin-top:4px;";
+    sel.onchange = () => {
+      customInput.style.display = sel.value === "_custom" ? "" : "none";
+    };
+    fields.appendChild(label);
+    fields.appendChild(sel);
+    fields.appendChild(customInput);
+  }
+
+  if (type === "activity") {
+    const label = document.createElement("label");
+    label.textContent = "Title";
+    const input = document.createElement("input");
+    input.id = "sch_act_title";
+    input.placeholder = "Activity title (e.g. Harness Training)";
+    input.style.marginTop = "4px";
+    fields.appendChild(label);
+    fields.appendChild(input);
+  }
+}
+
+function saveScheduledTasks() {
+  const type    = document.getElementById("sch_type")?.value;
+  const timeVal = document.getElementById("sch_time")?.value;
+  const notes   = document.getElementById("sch_notes")?.value || "";
+  const result  = document.getElementById("sch_result");
+
+  if (!timeVal) { result.textContent = "⚠️ Please set a date and time."; return; }
+
+  // Get selected animals
+  const selected = [...document.querySelectorAll("#sch_animals button")]
+    .filter(b => b.style.background === "rgb(26, 93, 26)")
+    .map(b => b.dataset.animal);
+
+  if (!selected.length) { result.textContent = "⚠️ Select at least one animal."; return; }
+
+  const timeISO = new Date(timeVal).toISOString();
+  const cfg = JSON.parse(localStorage.getItem(LS.cfg) || "{}");
+
+  // Build type-specific data
+  let taskData = { notes };
+  if (type === "med") {
+    const sel = document.getElementById("sch_med");
+    const custom = document.getElementById("sch_med_custom");
+    const medName = sel?.value === "_custom" ? (custom?.value.trim() || "") : (sel?.value || "");
+    if (!medName) { result.textContent = "⚠️ Enter a medication name."; return; }
+    taskData.med = medName;
+  }
+  if (type === "obs") {
+    taskData.title = document.getElementById("sch_obs_title")?.value.trim() || "";
+    taskData.sev = "Low";
+  }
+  if (type === "proc") {
+    const sel = document.getElementById("sch_proc");
+    const custom = document.getElementById("sch_proc_custom");
+    taskData.proc = sel?.value === "_custom" ? (custom?.value.trim() || "") : (sel?.value || "");
+  }
+  if (type === "activity") {
+    taskData.title = document.getElementById("sch_act_title")?.value.trim() || "";
+    taskData.desc  = notes;
+  }
+
+  // Create one task per selected animal
+  selected.forEach(animal => {
+    const task = {
+      id:       Date.now() + "s" + Math.random().toString(36).slice(2,7),
+      goat:     animal,
+      type:     type,
+      time:     timeISO,
+      data:     { ...taskData },
+      synced:   false,
+      loggedBy: cfg.user || "",
+      status:   "pending"
+    };
+    logs.push(task);
+  });
+
+  localStorage.setItem(LS.logs, JSON.stringify(logs));
+  renderPending();
+
+  result.textContent = `✅ ${selected.length} task${selected.length > 1 ? "s" : ""} scheduled for ${new Date(timeISO).toLocaleDateString()}.`;
+  result.style.color = "#3a7";
+
+  // Clear selections
+  schClearAll();
+  document.getElementById("sch_notes").value = "";
+}
+
+// ===== SHARED MODULE: toast =====
+function showToast(msg) {
+  let toast = document.getElementById("appToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "appToast";
+    toast.style.cssText = "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:20px;font-size:14px;z-index:9998;opacity:0;transition:opacity 0.3s;pointer-events:none;";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = "1";
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.opacity = "0"; }, 2500);
 }
 
 // ===== SHARED MODULE: fullscreen photo viewer with pinch-zoom =====
