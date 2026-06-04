@@ -139,6 +139,28 @@ input:focus, select:focus, textarea:focus {
 }
 
 #syncStatus { font-size:13px; color:#888; margin-top:6px; }
+/* ===== FULLSCREEN PHOTO VIEWER ===== */
+#photoViewer {
+  display:none;position:fixed;inset:0;z-index:9999;
+  background:rgba(0,0,0,0.95);
+  touch-action:none;
+  justify-content:center;align-items:center;
+}
+#photoViewer.open { display:flex; }
+#photoViewer img {
+  max-width:100%;max-height:100%;
+  object-fit:contain;
+  transform-origin:center center;
+  user-select:none;
+  pointer-events:none;
+}
+#photoViewerClose {
+  position:absolute;top:16px;right:16px;
+  background:rgba(0,0,0,0.6);color:#fff;
+  border:none;border-radius:50%;
+  width:44px;height:44px;font-size:22px;
+  cursor:pointer;z-index:10000;
+}
 </style>
 </head>
 <body>
@@ -772,12 +794,16 @@ function renderStep() {
       <label>Notes</label>
       <input id="f_hoofnotes" placeholder="Optional notes">
 
-      <label>Photo</label>
-      <div style="display:flex;gap:8px;margin-top:4px;">
-        <button type="button" onclick="document.getElementById('f_hoofphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
-        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      <label>Photo / File</label>
+      <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+        <button type="button" onclick="document.getElementById('f_hoofcamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="document.getElementById('f_hoofphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
+        <button type="button" onclick="document.getElementById('f_hooffile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
       </div>
-      <input type="file" id="f_hoofphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_hoofcamera" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_hoofphoto" accept="image/*" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_hooffile" accept=".pdf,.doc,.docx,.txt,.csv" style="display:none;" onchange="handleFileAttach(this)">
       <div id="photoPreview" style="margin-top:8px;"></div>
 
       <label>Schedule Follow-up</label>
@@ -819,12 +845,16 @@ function renderStep() {
         <option>Urgent</option>
       </select>
 
-      <label>Photo</label>
-      <div style="display:flex;gap:8px;margin-top:4px;">
-        <button type="button" onclick="document.getElementById('f_obsphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
-        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      <label>Photo / File</label>
+      <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+        <button type="button" onclick="document.getElementById('f_obscamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="document.getElementById('f_obsphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
+        <button type="button" onclick="document.getElementById('f_obsfile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
       </div>
-      <input type="file" id="f_obsphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_obscamera" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_obsphoto" accept="image/*" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_obsfile" accept=".pdf,.doc,.docx,.txt,.csv" style="display:none;" onchange="handleFileAttach(this)">
       <div id="photoPreview" style="margin-top:8px;"></div>
 
       <label>Schedule Follow-up</label>
@@ -870,12 +900,16 @@ function renderStep() {
       <label>Notes</label>
       <textarea id="f_birthnotes" rows="2" placeholder="Optional notes"></textarea>
 
-      <label>Photo</label>
-      <div style="display:flex;gap:8px;margin-top:4px;">
-        <button type="button" onclick="document.getElementById('f_birthphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
-        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      <label>Photo / File</label>
+      <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+        <button type="button" onclick="document.getElementById('f_birthcamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="document.getElementById('f_birthphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
+        <button type="button" onclick="document.getElementById('f_birthfile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
       </div>
-      <input type="file" id="f_birthphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_birthcamera" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_birthphoto" accept="image/*" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_birthfile" accept=".pdf,.doc,.docx,.txt,.csv" style="display:none;" onchange="handleFileAttach(this)">
       <div id="photoPreview" style="margin-top:8px;"></div>
     `;
   }
@@ -928,12 +962,16 @@ function renderStep() {
       <label>Notes</label>
       <textarea id="f_procnotes" rows="3" placeholder="Optional notes"></textarea>
 
-      <label>Photo</label>
-      <div style="display:flex;gap:8px;margin-top:4px;">
-        <button type="button" onclick="document.getElementById('f_procphoto').click()" style="flex:1;margin:0;padding:12px;font-size:15px;">📷 Add Photo</button>
-        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:12px;font-size:15px;background:#8b0000;">✕</button>
+      <label>Photo / File</label>
+      <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+        <button type="button" onclick="document.getElementById('f_proccamera').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📷 Camera</button>
+        <button type="button" onclick="document.getElementById('f_procphoto').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">🖼️ Gallery</button>
+        <button type="button" onclick="document.getElementById('f_procfile').click()" style="flex:1;margin:0;padding:10px;font-size:14px;">📎 File</button>
+        <button type="button" id="clearPhotoBtn" onclick="clearPhoto()" style="display:none;margin:0;padding:10px;font-size:14px;background:#8b0000;">✕</button>
       </div>
-      <input type="file" id="f_procphoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_proccamera" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_procphoto" accept="image/*" style="display:none;" onchange="handlePhoto(this)">
+      <input type="file" id="f_procfile" accept=".pdf,.doc,.docx,.txt,.csv" style="display:none;" onchange="handleFileAttach(this)">
       <div id="photoPreview" style="margin-top:8px;"></div>
 
       <label>Schedule Follow-up</label>
@@ -966,6 +1004,7 @@ function renderStep() {
 
 // ===== PHOTO HANDLING =====
 let currentPhoto = null;
+let currentFileAttach = null; // { name, type, blob } for PDF/file attachments
 
 function handlePhoto(input) {
   const file = input.files[0];
@@ -1001,10 +1040,12 @@ function clearPhoto() {
   const clearBtn = document.getElementById("clearPhotoBtn");
   if (clearBtn) clearBtn.style.display = "none";
   // Clear whichever photo input is present in current step
-  ["f_procphoto","f_hoofphoto","f_obsphoto","f_birthphoto"].forEach(id => {
+  ["f_procphoto","f_hoofphoto","f_obsphoto","f_birthphoto",
+   "f_proccamera","f_hoofcamera","f_obscamera","f_birthcamera"].forEach(id => {
     const input = document.getElementById(id);
     if (input) input.value = "";
   });
+  currentFileAttach = null;
 }
 
 function toggleRateDrawer() {
@@ -1295,9 +1336,11 @@ function saveStep() {
     entry.data = {
       state: document.getElementById("f_hoof")?.value || "Good",
       notes: document.getElementById("f_hoofnotes")?.value || "",
-      photo: currentPhoto || null
+      photo: currentPhoto || null,
+      fileAttach: currentFileAttach ? { name: currentFileAttach.name, type: currentFileAttach.type } : null
     };
     currentPhoto = null;
+    currentFileAttach = null;
     saveFollowup(g, "hoof", { state: entry.data.state, notes: entry.data.notes });
   }
 
@@ -1306,9 +1349,11 @@ function saveStep() {
       title: document.getElementById("f_obstitle")?.value || "",
       note:  document.getElementById("f_obs")?.value || "",
       sev:   document.getElementById("f_sev")?.value || "Low",
-      photo: currentPhoto || null
+      photo: currentPhoto || null,
+      fileAttach: currentFileAttach ? { name: currentFileAttach.name, type: currentFileAttach.type } : null
     };
     currentPhoto = null;
+    currentFileAttach = null;
     saveFollowup(g, "obs", { title: entry.data.title, note: entry.data.note, sev: entry.data.sev });
   }
 
@@ -1318,9 +1363,11 @@ function saveStep() {
       dam:   document.getElementById("f_dam")?.value || "",
       type:  document.getElementById("f_birthtype")?.value || "Natural",
       notes: document.getElementById("f_birthnotes")?.value || "",
-      photo: currentPhoto || null
+      photo: currentPhoto || null,
+      fileAttach: currentFileAttach ? { name: currentFileAttach.name, type: currentFileAttach.type } : null
     };
     currentPhoto = null;
+    currentFileAttach = null;
   }
 
   if (t === "activity") {
@@ -1335,9 +1382,11 @@ function saveStep() {
       proc:   document.getElementById("f_proc")?.value || "",
       method: document.getElementById("f_procmethod")?.value || "",
       notes:  document.getElementById("f_procnotes")?.value || "",
-      photo:  currentPhoto || null
+      photo:  currentPhoto || null,
+      fileAttach: currentFileAttach ? { name: currentFileAttach.name, type: currentFileAttach.type } : null
     };
     currentPhoto = null;
+    currentFileAttach = null;
     saveFollowup(g, "proc", { proc: entry.data.proc, method: entry.data.method });
   }
 
@@ -1441,7 +1490,7 @@ function makeLogEl(l, showActions = false) {
     <div class="log-detail log-preview">${detail}</div>
     <div class="log-time">${t}${l.loggedBy ? " \u00B7 " + l.loggedBy : ""}${statusTag}</div>
     <div class="log-drawer" style="display:none;">
-      ${l.data && l.data.photo ? `<img src="${l.data.photo}" data-photo-src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;" onerror="loadPhotoWithAuth(this)">` : ""}
+      ${l.data && l.data.photo ? `<img src="${l.data.photo}" data-photo-src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;cursor:zoom-in;" onclick="openPhotoViewer(this.src||this.dataset.photoSrc)" onerror="loadPhotoWithAuth(this)">` : ""}
     </div>
   `;
 
@@ -1805,6 +1854,78 @@ function addAnimalFromScreen() {
   localStorage.setItem(LS.goats, JSON.stringify(goats));
   populateGoatSelect();
   renderAnimalsScreen();
+}
+
+// ===== SHARED MODULE: fullscreen photo viewer with pinch-zoom =====
+let _viewerScale = 1;
+let _viewerLastDist = 0;
+let _viewerOriginX = 0;
+let _viewerOriginY = 0;
+
+function openPhotoViewer(src) {
+  const viewer = document.getElementById("photoViewer");
+  const img    = document.getElementById("photoViewerImg");
+  if (!viewer || !img || !src) return;
+  _viewerScale = 1;
+  img.style.transform = "scale(1)";
+  img.src = src;
+  viewer.classList.add("open");
+  // Pinch-zoom touch handlers
+  viewer.ontouchstart = e => {
+    if (e.touches.length === 2) {
+      _viewerLastDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      _viewerOriginX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      _viewerOriginY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      e.preventDefault();
+    }
+  };
+  viewer.ontouchmove = e => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (_viewerLastDist > 0) {
+        _viewerScale *= dist / _viewerLastDist;
+        _viewerScale = Math.min(Math.max(_viewerScale, 1), 6);
+        img.style.transformOrigin = `${_viewerOriginX}px ${_viewerOriginY}px`;
+        img.style.transform = `scale(${_viewerScale})`;
+      }
+      _viewerLastDist = dist;
+      e.preventDefault();
+    }
+  };
+  viewer.ontouchend = e => {
+    if (e.touches.length < 2) _viewerLastDist = 0;
+  };
+}
+
+function closePhotoViewer(e) {
+  if (e && e.target !== document.getElementById("photoViewer") &&
+      e.target !== document.getElementById("photoViewerClose")) return;
+  const viewer = document.getElementById("photoViewer");
+  if (viewer) viewer.classList.remove("open");
+}
+
+// ===== SHARED MODULE: file attachment handler =====
+function handleFileAttach(input) {
+  const file = input.files[0];
+  if (!file) return;
+  // Store blob for upload — _blob is excluded from localStorage serialization (too large)
+  currentFileAttach = { name: file.name, type: file.type, _blob: file };
+  const preview = document.getElementById("photoPreview");
+  if (preview) {
+    preview.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#2a2a2a;border-radius:6px;margin-top:4px;">
+      <span style="font-size:22px;">📎</span>
+      <span style="font-size:14px;color:#ccc;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${file.name}</span>
+      <span style="font-size:12px;color:#888;">${(file.size/1024).toFixed(0)}KB</span>
+    </div>`;
+  }
+  const clearBtn = document.getElementById("clearPhotoBtn");
+  if (clearBtn) clearBtn.style.display = "";
 }
 
 // ===== SHARED MODULE: photo auth loader =====
@@ -2763,9 +2884,30 @@ async function syncToFarmOS() {
             }
           }
 
+          // ===== FILE ATTACHMENT UPLOAD =====
+          // Upload PDF/doc files to the log's file field
+          if (l.data?.fileAttach && logUUID && l.data.fileAttach._blob) {
+            try {
+              const fileUrl = apiUrl(`/api/log/${farmosType}/${logUUID}/file`);
+              const fileUpload = await fetch(fileUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type":        "application/octet-stream",
+                  "Content-Disposition": `attachment; filename="${l.data.fileAttach.name}"`,
+                  "Accept":              "application/vnd.api+json",
+                  "Authorization":       "Bearer " + token
+                },
+                body: l.data.fileAttach._blob
+              });
+              if (!fileUpload.ok) logEl.textContent += `  ⚠️ File upload failed: ${fileUpload.status}\n`;
+            } catch(fe) {
+              logEl.textContent += `  ⚠️ File upload error: ${fe.message}\n`;
+            }
+          }
+
           l.synced = true;
           ok++;
-          logEl.textContent += `✅ ${l.goat} | ${farmosLogName(l)}${l.data?.photo ? " 📷" : ""}\n`;
+          logEl.textContent += `✅ ${l.goat} | ${farmosLogName(l)}${l.data?.photo ? " 📷" : ""}${l.data?.fileAttach ? " 📎" : ""}\n`;
         } else {
           const txt = await res.text();
           fail++;
@@ -2985,7 +3127,7 @@ function openEdit(id) {
       <input id="ed_procmethod" value="${l.data.method||""}">
       <label>Notes</label>
       <textarea id="ed_procnotes" rows="3">${l.data.notes||""}</textarea>
-      ${l.data.photo ? `<label>Photo</label><img src="${l.data.photo}" data-photo-src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:4px;" onerror="loadPhotoWithAuth(this)">` : ""}
+      ${l.data.photo ? `<label>Photo</label><img src="${l.data.photo}" data-photo-src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:4px;cursor:zoom-in;" onclick="openPhotoViewer(this.src||this.dataset.photoSrc)" onerror="loadPhotoWithAuth(this)">` : ""}
     `;
   }
 
@@ -3112,6 +3254,12 @@ if ("serviceWorker" in navigator) {
       <button onclick="closeEdit()" class="secondary" style="flex:1;margin:0;">Cancel</button>
     </div>
   </div>
+</div>
+
+<!-- ===== FULLSCREEN PHOTO VIEWER ===== -->
+<div id="photoViewer" onclick="closePhotoViewer(event)">
+  <button id="photoViewerClose" onclick="closePhotoViewer()">✕</button>
+  <img id="photoViewerImg" src="" alt="Photo">
 </div>
 
 </body>
