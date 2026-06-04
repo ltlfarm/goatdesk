@@ -2228,30 +2228,48 @@ function showToast(msg) {
 
 // ===== SHARED MODULE: fullscreen photo viewer with pinch-zoom =====
 let _viewerScale = 1;
+let _viewerTX = 0, _viewerTY = 0;         // current translate offsets
 let _viewerLastDist = 0;
-let _viewerOriginX = 0;
-let _viewerOriginY = 0;
+let _viewerPinchMidX = 0, _viewerPinchMidY = 0; // pinch midpoint in image coords at gesture start
+let _viewerTXstart = 0, _viewerTYstart = 0;      // translate at gesture start
+let _viewerScaleStart = 1;
+let _viewerPanStartX = 0, _viewerPanStartY = 0;  // single-finger pan start
+
+function _viewerApply(img) {
+  img.style.transform = `translate(${_viewerTX}px, ${_viewerTY}px) scale(${_viewerScale})`;
+}
 
 function openPhotoViewer(src) {
   const viewer = document.getElementById("photoViewer");
   const img    = document.getElementById("photoViewerImg");
   if (!viewer || !img || !src) return;
-  _viewerScale = 1;
-  img.style.transform = "scale(1)";
+  _viewerScale = 1; _viewerTX = 0; _viewerTY = 0;
+  img.style.transformOrigin = "center center";
+  img.style.transform = "translate(0px,0px) scale(1)";
   img.src = src;
   viewer.classList.add("open");
-  // Pinch-zoom touch handlers
+
   viewer.ontouchstart = e => {
     if (e.touches.length === 2) {
       _viewerLastDist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      _viewerOriginX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      _viewerOriginY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      _viewerScaleStart = _viewerScale;
+      _viewerTXstart    = _viewerTX;
+      _viewerTYstart    = _viewerTY;
+      // Midpoint in screen coords relative to viewer center
+      const vr = viewer.getBoundingClientRect();
+      _viewerPinchMidX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - (vr.left + vr.width  / 2);
+      _viewerPinchMidY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - (vr.top  + vr.height / 2);
+      e.preventDefault();
+    } else if (e.touches.length === 1 && _viewerScale > 1) {
+      _viewerPanStartX = e.touches[0].clientX - _viewerTX;
+      _viewerPanStartY = e.touches[0].clientY - _viewerTY;
       e.preventDefault();
     }
   };
+
   viewer.ontouchmove = e => {
     if (e.touches.length === 2) {
       const dist = Math.hypot(
@@ -2259,17 +2277,36 @@ function openPhotoViewer(src) {
         e.touches[0].clientY - e.touches[1].clientY
       );
       if (_viewerLastDist > 0) {
-        _viewerScale *= dist / _viewerLastDist;
-        _viewerScale = Math.min(Math.max(_viewerScale, 1), 6);
-        img.style.transformOrigin = `${_viewerOriginX}px ${_viewerOriginY}px`;
-        img.style.transform = `scale(${_viewerScale})`;
+        const s = Math.min(Math.max(_viewerScale * (dist / _viewerLastDist), 1), 6);
+        // Adjust translate so pinch midpoint stays fixed on screen
+        const ds = s / _viewerScale;
+        _viewerTX = _viewerPinchMidX + (_viewerTX - _viewerPinchMidX) * ds;
+        _viewerTY = _viewerPinchMidY + (_viewerTY - _viewerPinchMidY) * ds;
+        _viewerScale = s;
+        // Clamp pan
+        const maxT = (img.offsetWidth  * (_viewerScale - 1)) / 2;
+        const maxTY= (img.offsetHeight * (_viewerScale - 1)) / 2;
+        _viewerTX = Math.min(Math.max(_viewerTX, -maxT),  maxT);
+        _viewerTY = Math.min(Math.max(_viewerTY, -maxTY), maxTY);
+        _viewerApply(img);
       }
       _viewerLastDist = dist;
       e.preventDefault();
+    } else if (e.touches.length === 1 && _viewerScale > 1) {
+      _viewerTX = e.touches[0].clientX - _viewerPanStartX;
+      _viewerTY = e.touches[0].clientY - _viewerPanStartY;
+      const maxT = (img.offsetWidth  * (_viewerScale - 1)) / 2;
+      const maxTY= (img.offsetHeight * (_viewerScale - 1)) / 2;
+      _viewerTX = Math.min(Math.max(_viewerTX, -maxT),  maxT);
+      _viewerTY = Math.min(Math.max(_viewerTY, -maxTY), maxTY);
+      _viewerApply(img);
+      e.preventDefault();
     }
   };
+
   viewer.ontouchend = e => {
     if (e.touches.length < 2) _viewerLastDist = 0;
+    if (_viewerScale <= 1) { _viewerTX = 0; _viewerTY = 0; _viewerApply(img); }
   };
 }
 
