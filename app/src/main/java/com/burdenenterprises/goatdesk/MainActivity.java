@@ -58,8 +58,6 @@ public class MainActivity extends Activity {
                     FileChooserParams params) {
                 if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                 filePathCallback = callback;
-
-                // Gallery / file picker — use system chooser
                 Intent intent = params.createIntent();
                 try {
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
@@ -74,25 +72,26 @@ public class MainActivity extends Activity {
         webView.loadUrl("file:///android_asset/goatdesk.html");
     }
 
-    // ===== ANDROID CAMERA BRIDGE =====
-    // Called directly from JS — bypasses Samsung's photo picker
     public class AndroidBridge {
         @JavascriptInterface
         public void takePhoto(String jsCallback) {
-            try {
-                cameraJsCallback = jsCallback;
-                File photoFile = createImageFile();
-                cameraImageUri = FileProvider.getUriForFile(
-                    MainActivity.this,
-                    "com.burdenenterprises.goatdesk.fileprovider",
-                    photoFile
-                );
-                Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
-                startActivityForResult(intent, CAMERA_BRIDGE_REQUEST);
-            } catch (Exception e) {
-                cameraJsCallback = null;
-            }
+            cameraJsCallback = jsCallback;
+            // JavascriptInterface runs on background thread — must launch UI on main thread
+            runOnUiThread(() -> {
+                try {
+                    File photoFile = createImageFile();
+                    cameraImageUri = FileProvider.getUriForFile(
+                        MainActivity.this,
+                        "com.burdenenterprises.goatdesk.fileprovider",
+                        photoFile
+                    );
+                    Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                    intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
+                    startActivityForResult(intent, CAMERA_BRIDGE_REQUEST);
+                } catch (Exception e) {
+                    cameraJsCallback = null;
+                }
+            });
         }
     }
 
@@ -105,7 +104,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 
-        // Camera bridge result — encode image and call JS callback
         if (requestCode == CAMERA_BRIDGE_REQUEST) {
             if (resultCode == RESULT_OK && cameraImageUri != null) {
                 try {
@@ -119,7 +117,7 @@ public class MainActivity extends Activity {
                     webView.post(() ->
                         webView.evaluateJavascript(cb + "('" + dataUrl + "')", null));
                 } catch (Exception e) {
-                    // Silently fail — user can try gallery instead
+                    // Silently fail — user can use Gallery instead
                 }
             }
             cameraImageUri = null;
@@ -127,7 +125,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Gallery / file chooser result
         if (requestCode == FILE_CHOOSER_REQUEST) {
             if (filePathCallback == null) return;
             Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
