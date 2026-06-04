@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraImageUri;
+    private File cameraImageFile;
     private String cameraJsCallback;
     private static final int FILE_CHOOSER_REQUEST = 1;
     private static final int CAMERA_BRIDGE_REQUEST = 3;
@@ -76,14 +77,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void takePhoto(String jsCallback) {
             cameraJsCallback = jsCallback;
-            // JavascriptInterface runs on background thread — must launch UI on main thread
             runOnUiThread(() -> {
                 try {
-                    File photoFile = createImageFile();
+                    cameraImageFile = createImageFile();
                     cameraImageUri = FileProvider.getUriForFile(
                         MainActivity.this,
                         "com.burdenenterprises.goatdesk.fileprovider",
-                        photoFile
+                        cameraImageFile
                     );
                     Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                     intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
@@ -105,22 +105,29 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 
         if (requestCode == CAMERA_BRIDGE_REQUEST) {
-            if (resultCode == RESULT_OK && cameraImageUri != null) {
+            // Samsung older devices often return RESULT_CANCELED even on success.
+            // Check if the file was actually written regardless of resultCode.
+            boolean fileReady = (cameraImageFile != null
+                                 && cameraImageFile.exists()
+                                 && cameraImageFile.length() > 0);
+            if (fileReady) {
                 try {
-                    Bitmap bmp = BitmapFactory.decodeStream(
-                        getContentResolver().openInputStream(cameraImageUri));
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos);
-                    String b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
-                    final String dataUrl = "data:image/jpeg;base64," + b64;
-                    final String cb = cameraJsCallback != null ? cameraJsCallback : "onAndroidPhoto";
-                    webView.post(() ->
-                        webView.evaluateJavascript(cb + "('" + dataUrl + "')", null));
+                    Bitmap bmp = BitmapFactory.decodeFile(cameraImageFile.getAbsolutePath());
+                    if (bmp != null) {
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos);
+                        String b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+                        final String dataUrl = "data:image/jpeg;base64," + b64;
+                        final String cb = cameraJsCallback != null ? cameraJsCallback : "onAndroidPhoto";
+                        webView.post(() ->
+                            webView.evaluateJavascript(cb + "('" + dataUrl + "')", null));
+                    }
                 } catch (Exception e) {
                     // Silently fail — user can use Gallery instead
                 }
             }
             cameraImageUri = null;
+            cameraImageFile = null;
             cameraJsCallback = null;
             return;
         }
