@@ -1441,7 +1441,7 @@ function makeLogEl(l, showActions = false) {
     <div class="log-detail log-preview">${detail}</div>
     <div class="log-time">${t}${l.loggedBy ? " \u00B7 " + l.loggedBy : ""}${statusTag}</div>
     <div class="log-drawer" style="display:none;">
-      ${l.data && l.data.photo ? `<img src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;">` : ""}
+      ${l.data && l.data.photo ? `<img src="${l.data.photo}" data-photo-src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:6px;max-height:200px;object-fit:cover;" onerror="loadPhotoWithAuth(this)">` : ""}
     </div>
   `;
 
@@ -1461,7 +1461,7 @@ function makeLogEl(l, showActions = false) {
     editBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;";
     editBtn.onclick = () => openEdit(l.id);
     const delBtn = document.createElement("button");
-    delBtn.textContent = "\U0001F5D1\uFE0F Delete";
+    delBtn.textContent = "🗑️ Delete";
     delBtn.style.cssText = "padding:6px 12px;font-size:13px;margin:0;background:#8b0000;";
     delBtn.onclick = () => deleteLog(l.id);
     actions.appendChild(editBtn);
@@ -1805,6 +1805,32 @@ function addAnimalFromScreen() {
   localStorage.setItem(LS.goats, JSON.stringify(goats));
   populateGoatSelect();
   renderAnimalsScreen();
+}
+
+// ===== SHARED MODULE: photo auth loader =====
+// farmOS may serve file URLs that require auth. Try direct first,
+// fall back to fetching with Bearer token if the image fails to load.
+function loadPhotoWithAuth(img) {
+  const src = img.dataset.photoSrc;
+  if (!src || img.dataset.authAttempted) return;
+  img.dataset.authAttempted = "1";
+  const cfg = JSON.parse(localStorage.getItem("farmdesk_cfg") || "{}");
+  // Try to get a fresh token silently
+  getToken(cfg).then(token => {
+    fetch(src, { headers: { "Authorization": "Bearer " + token } })
+      .then(r => r.blob())
+      .then(blob => { img.src = URL.createObjectURL(blob); })
+      .catch(() => { img.style.display = "none"; });
+  }).catch(() => { img.style.display = "none"; });
+}
+
+// Set photo src on page elements — call after rendering log cards
+function applyPhotoSrcs() {
+  document.querySelectorAll("img[data-photo-src]").forEach(img => {
+    if (!img.src || img.src === window.location.href) {
+      img.src = img.dataset.photoSrc;
+    }
+  });
 }
 
 // ===== SHARED MODULE: logo =====
@@ -2547,6 +2573,7 @@ async function fetchAnimalUUIDs(silent = false) {
 
     renderRecent();
     renderPending();
+    applyPhotoSrcs();
 
   } catch(e) {
     if (!silent) {
@@ -2958,7 +2985,7 @@ function openEdit(id) {
       <input id="ed_procmethod" value="${l.data.method||""}">
       <label>Notes</label>
       <textarea id="ed_procnotes" rows="3">${l.data.notes||""}</textarea>
-      ${l.data.photo ? `<label>Photo</label><img src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:4px;">` : ""}
+      ${l.data.photo ? `<label>Photo</label><img src="${l.data.photo}" data-photo-src="${l.data.photo}" style="width:100%;border-radius:6px;margin-top:4px;" onerror="loadPhotoWithAuth(this)">` : ""}
     `;
   }
 
