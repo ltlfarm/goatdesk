@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -25,6 +26,7 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
 
+    private static final String TAG = "GoatDesk";
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraImageUri;
@@ -76,19 +78,24 @@ public class MainActivity extends Activity {
     public class AndroidBridge {
         @JavascriptInterface
         public void takePhoto(String jsCallback) {
+            Log.d(TAG, "takePhoto called, callback=" + jsCallback);
             cameraJsCallback = jsCallback;
             runOnUiThread(() -> {
                 try {
                     cameraImageFile = createImageFile();
+                    Log.d(TAG, "imageFile=" + cameraImageFile.getAbsolutePath());
                     cameraImageUri = FileProvider.getUriForFile(
                         MainActivity.this,
                         "com.burdenenterprises.goatdesk.fileprovider",
                         cameraImageFile
                     );
+                    Log.d(TAG, "cameraUri=" + cameraImageUri);
                     Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                     intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
                     startActivityForResult(intent, CAMERA_BRIDGE_REQUEST);
+                    Log.d(TAG, "startActivityForResult fired");
                 } catch (Exception e) {
+                    Log.e(TAG, "takePhoto exception: " + e.getMessage());
                     cameraJsCallback = null;
                 }
             });
@@ -103,27 +110,31 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        Log.d(TAG, "onActivityResult requestCode=" + requestCode + " resultCode=" + resultCode);
 
         if (requestCode == CAMERA_BRIDGE_REQUEST) {
-            // Samsung older devices often return RESULT_CANCELED even on success.
-            // Check if the file was actually written regardless of resultCode.
             boolean fileReady = (cameraImageFile != null
                                  && cameraImageFile.exists()
                                  && cameraImageFile.length() > 0);
+            Log.d(TAG, "fileReady=" + fileReady
+                + (cameraImageFile != null ? " size=" + cameraImageFile.length() : " file=null"));
+
             if (fileReady) {
                 try {
                     Bitmap bmp = BitmapFactory.decodeFile(cameraImageFile.getAbsolutePath());
+                    Log.d(TAG, "bitmap=" + (bmp != null ? bmp.getWidth() + "x" + bmp.getHeight() : "null"));
                     if (bmp != null) {
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos);
                         String b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
                         final String dataUrl = "data:image/jpeg;base64," + b64;
                         final String cb = cameraJsCallback != null ? cameraJsCallback : "onAndroidPhoto";
+                        Log.d(TAG, "calling JS " + cb + " b64len=" + b64.length());
                         webView.post(() ->
                             webView.evaluateJavascript(cb + "('" + dataUrl + "')", null));
                     }
                 } catch (Exception e) {
-                    // Silently fail — user can use Gallery instead
+                    Log.e(TAG, "encode exception: " + e.getMessage());
                 }
             }
             cameraImageUri = null;
