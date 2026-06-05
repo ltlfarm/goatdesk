@@ -10,7 +10,11 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.webkit.JavascriptInterface;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -34,6 +38,7 @@ public class MainActivity extends Activity {
     private String cameraJsCallback;
     private static final int FILE_CHOOSER_REQUEST = 1;
     private static final int CAMERA_BRIDGE_REQUEST = 3;
+    private static final int CAMERA_PERMISSION_REQUEST = 10;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +77,7 @@ public class MainActivity extends Activity {
             }
         });
 
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST); }
         webView.loadUrl("file:///android_asset/goatdesk.html");
     }
 
@@ -81,6 +87,7 @@ public class MainActivity extends Activity {
             Log.d(TAG, "takePhoto called, callback=" + jsCallback);
             cameraJsCallback = jsCallback;
             runOnUiThread(() -> {
+                if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST); return; }
                 try {
                     cameraImageFile = createImageFile();
                     Log.d(TAG, "imageFile=" + cameraImageFile.getAbsolutePath());
