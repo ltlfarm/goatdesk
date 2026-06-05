@@ -1052,7 +1052,7 @@ function renderStep() {
 
 // ===== ANDROID CAMERA BRIDGE =====
 // Called by 📷 Camera buttons — bypasses Samsung's photo picker entirely
-function takeCameraBridge() {
+function takeCameraBridge() { try { AndroidBridge.takePhoto("onAndroidPhoto"); return; } catch(e) {}
   if (window.AndroidBridge && window.AndroidBridge.takePhoto) {
     window.AndroidBridge.takePhoto("onAndroidPhoto");
   } else {
