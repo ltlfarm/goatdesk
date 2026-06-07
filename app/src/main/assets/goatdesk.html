@@ -1579,7 +1579,7 @@ function makeLogEl(l, showActions = false) {
   d.dataset.logId = l.id;
   d.style.cursor = "pointer";
   d.onclick = function(e) {
-    if (e.target.closest("button") || e.target.closest("input")) return;
+    if (e.target.closest("button") || e.target.closest("input") || e.target.closest("img")) return;
     toggleLogDrawer(this);
   };
   const t = l.time ? (new Date(l.time).toString() !== "Invalid Date" ? new Date(l.time).toLocaleString() : "unknown time") : "unknown time";
