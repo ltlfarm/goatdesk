@@ -2329,8 +2329,11 @@ function openPhotoViewer(src) {
 }
 
 function closePhotoViewer(e) {
-  if (e && e.target !== document.getElementById("photoViewer") &&
-      e.target !== document.getElementById("photoViewerClose")) return;
+  if (e && e.target !== document.getElementById("photoViewer")) return;
+  const viewer = document.getElementById("photoViewer");
+  if (viewer) viewer.classList.remove("open");
+}
+function closePhotoViewerForce() {
   const viewer = document.getElementById("photoViewer");
   if (viewer) viewer.classList.remove("open");
 }
@@ -3683,7 +3686,7 @@ if ("serviceWorker" in navigator) {
 
 <!-- ===== FULLSCREEN PHOTO VIEWER ===== -->
 <div id="photoViewer" onclick="closePhotoViewer(event)">
-  <button id="photoViewerClose" onclick="closePhotoViewer()">✕</button>
+  <button id="photoViewerClose" onclick="closePhotoViewerForce()">✕</button>
   <img id="photoViewerImg" src="" alt="Photo">
 </div>
 

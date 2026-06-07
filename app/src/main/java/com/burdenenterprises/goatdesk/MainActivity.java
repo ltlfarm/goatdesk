@@ -160,10 +160,6 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        webView.evaluateJavascript("(function(){ var v=document.getElementById('photoViewer'); if(v && v.classList.contains('open')){v.classList.remove('open');return true;} if(window.history.length>1){history.back();return true;} return false; })()", val -> { if(!"true".equals(val)) runOnUiThread(()->super.onBackPressed()); });
     }
 }
