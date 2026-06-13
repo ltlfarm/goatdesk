@@ -1069,22 +1069,101 @@ function takeCameraBridge() {
 function onAndroidPhoto(dataUrl) {
   if (!dataUrl) return;
   const full = dataUrl.startsWith("data:") ? dataUrl : "data:image/jpeg;base64," + dataUrl;
-  // Resize same as handlePhoto
+  // Resize + EXIF-correct same as handlePhoto
   const img = new Image();
   img.onload = () => {
-    const canvas = document.createElement("canvas");
-    const maxW = 800;
-    const ratio = Math.min(1, maxW / img.width);
-    canvas.width  = img.width  * ratio;
-    canvas.height = img.height * ratio;
-    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-    currentPhoto = canvas.toDataURL("image/jpeg", 0.7);
-    const preview = document.getElementById("photoPreview");
-    if (preview) preview.innerHTML = `<img src="${currentPhoto}" style="width:100%;border-radius:6px;margin-top:4px;">`;
-    const clearBtn = document.getElementById("clearPhotoBtn");
-    if (clearBtn) clearBtn.style.display = "inline-block";
+    orientedCanvas(img, full, 800, canvas => {
+      currentPhoto = canvas.toDataURL("image/jpeg", 0.7);
+      const preview = document.getElementById("photoPreview");
+      if (preview) preview.innerHTML = `<img src="${currentPhoto}" style="width:100%;border-radius:6px;margin-top:4px;">`;
+      const clearBtn = document.getElementById("clearPhotoBtn");
+      if (clearBtn) clearBtn.style.display = "inline-block";
+    });
   };
   img.src = full;
+}
+
+// ===== SHARED MODULE: EXIF orientation correction =====
+// Camera photos carry an EXIF orientation tag; WebView ignores it and shows
+// them sideways. correctOrientation reads the tag; orientedCanvas redraws the
+// image upright and resized in one pass.
+function correctOrientation(img, rawDataUrl, callback) {
+  // Only attempt EXIF read for JPEG data URLs from camera
+  if (!rawDataUrl || !rawDataUrl.includes('data:image/jpeg')) {
+    callback(img, 1);
+    return;
+  }
+  try {
+    const base64 = rawDataUrl.split(',')[1];
+    const binary = atob(base64.slice(0, 1024)); // only need first 1kb for EXIF
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    // Find EXIF orientation tag (0x0112) in JPEG APP1 marker
+    let orientation = 1;
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8) {
+      let offset = 2;
+      while (offset < bytes.length - 4) {
+        if (bytes[offset] !== 0xFF) break;
+        const marker = bytes[offset + 1];
+        const segLen = (bytes[offset + 2] << 8) | bytes[offset + 3];
+        if (marker === 0xE1) { // APP1 = EXIF
+          if (bytes[offset+4]===0x45 && bytes[offset+5]===0x78) { // "Ex"
+            const tiff = offset + 10;
+            const le = bytes[tiff] === 0x49;
+            const r = (o, n) => le
+              ? bytes.slice(o,o+n).reduce((a,b,i)=>a+(b<<(8*i)),0)
+              : bytes.slice(o,o+n).reduce((a,b)=>(a<<8)|b,0);
+            const ifdOff = tiff + r(tiff+4, 4);
+            const entries = r(ifdOff, 2);
+            for (let e = 0; e < entries; e++) {
+              const eOff = ifdOff + 2 + e * 12;
+              if (r(eOff, 2) === 0x0112) {
+                orientation = r(eOff + 8, 2);
+                break;
+              }
+            }
+          }
+          break;
+        }
+        offset += 2 + segLen;
+      }
+    }
+    callback(img, orientation);
+  } catch(e) {
+    callback(img, 1);
+  }
+}
+
+function orientedCanvas(img, rawDataUrl, maxW, callback) {
+  correctOrientation(img, rawDataUrl, (img, orient) => {
+    // For orientations 5-8 the image is rotated 90/270 so w/h are swapped
+    const swapped = orient >= 5;
+    const natW = img.naturalWidth  || img.width;
+    const natH = img.naturalHeight || img.height;
+    const outW = swapped ? natH : natW;
+    const outH = swapped ? natW : natH;
+    const ratio = Math.min(1, maxW / outW);
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.round(outW * ratio);
+    canvas.height = Math.round(outH * ratio);
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    switch (orient) {
+      case 2:                  ctx.scale(-1, 1);  break;
+      case 3:                  ctx.rotate(Math.PI); break;
+      case 4:                  ctx.scale(1, -1);  break;
+      case 5: ctx.rotate(-Math.PI/2); ctx.scale(-1, 1); break;
+      case 6: ctx.rotate( Math.PI/2); break;
+      case 7: ctx.rotate( Math.PI/2); ctx.scale(-1, 1); break;
+      case 8: ctx.rotate(-Math.PI/2); break;
+      default: break;
+    }
+    ctx.scale(ratio, ratio);
+    ctx.drawImage(img, -natW / 2, -natH / 2);
+    ctx.restore();
+    callback(canvas);
+  });
 }
 
 // ===== PHOTO HANDLING =====
@@ -1096,22 +1175,18 @@ function handlePhoto(input) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    // Resize to max 800px wide to keep storage reasonable
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const maxW = 800;
-      const ratio = Math.min(1, maxW / img.width);
-      canvas.width = img.width * ratio;
-      canvas.height = img.height * ratio;
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      currentPhoto = canvas.toDataURL("image/jpeg", 0.7);
-      const preview = document.getElementById("photoPreview");
-      if (preview) {
-        preview.innerHTML = `<img src="${currentPhoto}" style="width:100%;border-radius:6px;margin-top:4px;">`;
-      }
-      const clearBtn = document.getElementById("clearPhotoBtn");
-      if (clearBtn) clearBtn.style.display = "inline-block";
+      // Resize to max 800px wide AND correct EXIF orientation in one pass
+      orientedCanvas(img, e.target.result, 800, canvas => {
+        currentPhoto = canvas.toDataURL("image/jpeg", 0.7);
+        const preview = document.getElementById("photoPreview");
+        if (preview) {
+          preview.innerHTML = `<img src="${currentPhoto}" style="width:100%;border-radius:6px;margin-top:4px;">`;
+        }
+        const clearBtn = document.getElementById("clearPhotoBtn");
+        if (clearBtn) clearBtn.style.display = "inline-block";
+      });
     };
     img.src = e.target.result;
   };
@@ -2910,18 +2985,35 @@ async function fetchAnimalUUIDs(silent = false) {
     if (!silent && el) { el.style.color = "#888"; el.textContent = "Fetching config..."; }
     await pullConfig(token);
 
-    // ===== STEP 2: Fetch all animals =====
+    // ===== STEP 2: Fetch this module's animals =====
+    // Each module only pulls its own kinds, matched against the farmOS
+    // animal_type term: goats here. Animals with NO type set are still
+    // included (never silently hide someone's herd) — set types in farmOS
+    // to filter mixed farms cleanly.
+    const MODULE_ANIMAL_TYPES = ["goat"]; // lowercase term names this module owns
     if (!silent && el) el.textContent = "Fetching animals...";
-    const animalRes = await fetch(apiUrl("/api/asset/animal?page[limit]=100"), { headers: authHeaders });
-    if (!animalRes.ok) throw new Error("Animals fetch failed: HTTP " + animalRes.status);
-    const animalData = await animalRes.json();
+    let animalRows = [], typeNames = {};
+    let aUrl = apiUrl("/api/asset/animal?include=animal_type&page[limit]=100");
+    while (aUrl) {
+      const animalRes = await fetch(aUrl, { headers: authHeaders });
+      if (!animalRes.ok) throw new Error("Animals fetch failed: HTTP " + animalRes.status);
+      const animalData = await animalRes.json();
+      animalRows = animalRows.concat(animalData.data || []);
+      (animalData.included || []).forEach(t => {
+        if (t.type === "taxonomy_term--animal_type") typeNames[t.id] = (t.attributes.name || "").toLowerCase();
+      });
+      aUrl = animalData.links?.next?.href || null;
+    }
 
     animalUUIDs = {};
     const archivedNames = [];
 
-    (animalData.data || []).forEach(a => {
+    animalRows.forEach(a => {
       const name = (a.attributes.name || "").trim();
       if (!name) return;
+      const typeId = a.relationships?.animal_type?.data?.id;
+      const typeName = typeId ? typeNames[typeId] : null;
+      if (typeName && !MODULE_ANIMAL_TYPES.includes(typeName)) return; // other module's animal
       if (a.attributes.status === "archived") {
         archivedNames.push(name);
         return;
@@ -3204,6 +3296,32 @@ function parseFarmOSNotes(farmosType, name, notes, quantities) {
   return { note: nt || n, sev: "Low" };
 }
 
+// ===== SHARED: replace-on-push — keep only the newest photo on a record =====
+// farmOS APPENDS uploaded images. After an upload succeeds, this PATCHes the
+// record's image relationship down to just the new file, so old copies detach
+// and Drupal's cleanup removes them. Photos are per-record in farmOS, so this
+// can never affect any other asset or log.
+async function keepOnlyNewestImage(entityType, bundle, uuid, fileId, token) {
+  if (!fileId) return;
+  try {
+    await fetch(apiUrl(`/api/${entityType}/${bundle}/${uuid}`), {
+      method: "PATCH",
+      headers: {
+        "Content-Type":  "application/vnd.api+json",
+        "Accept":        "application/vnd.api+json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({
+        data: {
+          type: entityType + "--" + bundle,
+          id:   uuid,
+          relationships: { image: { data: [{ type: "file--file", id: fileId }] } }
+        }
+      })
+    });
+  } catch(e) { /* non-fatal — worst case the old photo stays attached */ }
+}
+
 function buildFarmOSPayload(l) {
   const farmosType = FARMOS_TYPE_MAP[l.type] || "activity";
   const uuid = animalUUIDs[l.goat];
@@ -3307,6 +3425,9 @@ async function syncToFarmOS() {
               });
               if (!photoUpload.ok) {
                 logEl.textContent += `  ⚠️ Photo upload failed: ${photoUpload.status}\n`;
+              } else {
+                const fileData = await photoUpload.json().catch(() => null);
+                await keepOnlyNewestImage('log', farmosType, logUUID, fileData?.data?.id, token);
               }
             } catch(pe) {
               logEl.textContent += `  ⚠️ Photo upload error: ${pe.message}\n`;
@@ -3363,6 +3484,32 @@ async function syncToFarmOS() {
       try {
         const res = await fetch(url, { method: "PATCH", headers, body: JSON.stringify(payload) });
         if (res.ok) {
+          // Re-push the photo too (e.g. after a rotate or edit) — only when it's
+          // a fresh base64 capture, not a farmOS-served URL.
+          if (l.data?.photo && l.data.photo.startsWith("data:")) {
+            try {
+              const photoRes = await fetch(l.data.photo);
+              const blob = await photoRes.blob();
+              const photoUpload = await fetch(apiUrl(`/api/log/${farmosType}/${l.id}/image`), {
+                method: "POST",
+                headers: {
+                  "Content-Type":        "application/octet-stream",
+                  "Content-Disposition": 'attachment; filename="goatdesk-photo.jpg"',
+                  "Accept":              "application/vnd.api+json",
+                  "Authorization":       "Bearer " + token
+                },
+                body: blob
+              });
+              if (!photoUpload.ok) {
+                logEl.textContent += `  ⚠️ Photo upload failed: ${photoUpload.status}\n`;
+              } else {
+                const fileData = await photoUpload.json().catch(() => null);
+                await keepOnlyNewestImage('log', farmosType, l.id, fileData?.data?.id, token);
+              }
+            } catch(pe) {
+              logEl.textContent += `  ⚠️ Photo upload error: ${pe.message}\n`;
+            }
+          }
           l.synced     = true;
           l.needsPatch = false;
           ok++;
