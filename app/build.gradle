@@ -10,8 +10,8 @@ android {
         applicationId "com.burdenenterprises.goatdesk"
         minSdk 21
         targetSdk 34
-        versionCode 1781374969
-        versionName "2026.06.13-1922"
+        versionCode 1781375839
+        versionName "2026.06.13-1937"
     }
 
     signingConfigs {
