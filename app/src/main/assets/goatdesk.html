@@ -1483,6 +1483,8 @@ function saveStep() {
     if (task) {
       task.status = "done";
       task.synced = false;
+      // A task that came from farmOS is ONE log: PATCH it to done, never POST a duplicate
+      if (task.fromFarmOS) task.needsPatch = true;
     }
     _activeTaskId = null;
   }
@@ -1579,7 +1581,7 @@ function makeLogEl(l, showActions = false) {
   d.dataset.logId = l.id;
   d.style.cursor = "pointer";
   d.onclick = function(e) {
-    if (e.target.closest("button") || e.target.closest("input") || e.target.closest("img")) return;
+    if (e.target.closest("button") || e.target.closest("input")) return;
     toggleLogDrawer(this);
   };
   const t = l.time ? (new Date(l.time).toString() !== "Invalid Date" ? new Date(l.time).toLocaleString() : "unknown time") : "unknown time";
@@ -1657,18 +1659,6 @@ function renderPending() {
   box.style.display = "block";
   list.innerHTML = "";
   pending.forEach(l => list.appendChild(makeLogEl(l, true)));
-}
-
-function completeTask(id) {
-  const l = logs.find(l => l.id === id);
-  if (!l) return;
-  l.status = "done";
-  l.time = new Date().toISOString();
-  l.synced = false;
-  localStorage.setItem(LS.logs, JSON.stringify(logs));
-  renderPending();
-  renderRecent();
-  renderHistory();
 }
 
 // ===== RECENT =====
@@ -2043,10 +2033,13 @@ function cloneLog(id) {
   clone.id = Date.now() + "c" + Math.random().toString(36).slice(2,7);
   clone.time = new Date().toISOString();
   clone.synced = false;
-  clone.fromFarmOS = false;
   clone.status = "done";
-  // Don't clone photo URLs from farmOS — they'd be stale
-  if (clone.data && clone.data.photo && clone.fromFarmOS) clone.data.photo = null;
+  // Don't clone photo URLs from farmOS — they'd be stale. Check the ORIGINAL
+  // before we reset the flag below (the old check ran after reset = never fired).
+  if (clone.data && clone.data.photo && orig.fromFarmOS) clone.data.photo = null;
+  clone.fromFarmOS = false;
+  delete clone.farmosBundle; // a clone is a brand-new local log → POST, never PATCH
+  delete clone.needsPatch;
   logs.push(clone);
   localStorage.setItem(LS.logs, JSON.stringify(logs));
   renderRecent();
@@ -2269,31 +2262,28 @@ function showToast(msg) {
 }
 
 // ===== SHARED MODULE: fullscreen photo viewer with pinch-zoom =====
-let _viewerScale = 1, _viewerTX = 0, _viewerTY = 0;
+let _viewerScale = 1;
 let _viewerLastDist = 0;
-let _viewerPanStartX = 0, _viewerPanStartY = 0;
-function _viewerApply(img) {
-  img.style.transform = `translate(${_viewerTX}px,${_viewerTY}px) scale(${_viewerScale})`;
-}
+let _viewerOriginX = 0;
+let _viewerOriginY = 0;
+
 function openPhotoViewer(src) {
   const viewer = document.getElementById("photoViewer");
   const img    = document.getElementById("photoViewerImg");
   if (!viewer || !img || !src) return;
-  _viewerScale = 1; _viewerTX = 0; _viewerTY = 0;
-  img.style.transformOrigin = "center center";
-  img.style.transform = "translate(0px,0px) scale(1)";
+  _viewerScale = 1;
+  img.style.transform = "scale(1)";
   img.src = src;
   viewer.classList.add("open");
+  // Pinch-zoom touch handlers
   viewer.ontouchstart = e => {
     if (e.touches.length === 2) {
       _viewerLastDist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      e.preventDefault();
-    } else if (e.touches.length === 1 && _viewerScale > 1) {
-      _viewerPanStartX = e.touches[0].clientX - _viewerTX;
-      _viewerPanStartY = e.touches[0].clientY - _viewerTY;
+      _viewerOriginX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      _viewerOriginY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       e.preventDefault();
     }
   };
@@ -2304,36 +2294,23 @@ function openPhotoViewer(src) {
         e.touches[0].clientY - e.touches[1].clientY
       );
       if (_viewerLastDist > 0) {
-        _viewerScale = Math.min(Math.max(_viewerScale * (dist / _viewerLastDist), 1), 6);
-        const maxTX = (img.offsetWidth  * (_viewerScale - 1)) / 2;
-        const maxTY = (img.offsetHeight * (_viewerScale - 1)) / 2;
-        _viewerTX = Math.min(Math.max(_viewerTX, -maxTX), maxTX);
-        _viewerTY = Math.min(Math.max(_viewerTY, -maxTY), maxTY);
-        _viewerApply(img);
+        _viewerScale *= dist / _viewerLastDist;
+        _viewerScale = Math.min(Math.max(_viewerScale, 1), 6);
+        img.style.transformOrigin = `${_viewerOriginX}px ${_viewerOriginY}px`;
+        img.style.transform = `scale(${_viewerScale})`;
       }
       _viewerLastDist = dist;
-      e.preventDefault();
-    } else if (e.touches.length === 1 && _viewerScale > 1) {
-      const maxTX = (img.offsetWidth  * (_viewerScale - 1)) / 2;
-      const maxTY = (img.offsetHeight * (_viewerScale - 1)) / 2;
-      _viewerTX = Math.min(Math.max(e.touches[0].clientX - _viewerPanStartX, -maxTX), maxTX);
-      _viewerTY = Math.min(Math.max(e.touches[0].clientY - _viewerPanStartY, -maxTY), maxTY);
-      _viewerApply(img);
       e.preventDefault();
     }
   };
   viewer.ontouchend = e => {
     if (e.touches.length < 2) _viewerLastDist = 0;
-    if (_viewerScale <= 1) { _viewerTX = 0; _viewerTY = 0; _viewerApply(img); }
   };
 }
 
 function closePhotoViewer(e) {
-  if (e && e.target !== document.getElementById("photoViewer")) return;
-  const viewer = document.getElementById("photoViewer");
-  if (viewer) viewer.classList.remove("open");
-}
-function closePhotoViewerForce() {
+  if (e && e.target !== document.getElementById("photoViewer") &&
+      e.target !== document.getElementById("photoViewerClose")) return;
   const viewer = document.getElementById("photoViewer");
   if (viewer) viewer.classList.remove("open");
 }
@@ -2430,7 +2407,7 @@ function exportLogs() {
   const blob = new Blob([data], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "goatdesk_logs_" + new Date().toISOString().slice(0,10) + ".json";
+  a.download = "farmdesk_logs_" + new Date().toISOString().slice(0,10) + ".json";
   a.click();
 }
 
@@ -2569,6 +2546,7 @@ function saveFarmOSCfg() {
 // ===== SHARED MODULE: OAuth2 authentication =====
 // Tries proxy first then direct. Returns a valid token or throws.
 async function getToken(cfg) {
+  let lastErr = null; // most informative error seen across attempts
   const tryAuth = async (url, scope) => {
     const body = new URLSearchParams({
       grant_type: "password",
@@ -2592,8 +2570,17 @@ async function getToken(cfg) {
         const data = await res.json();
         return data.access_token;
       }
+      // Surface farmOS's actual error so the user knows WHY it failed
+      // (flood lockout vs wrong password vs missing role) instead of a
+      // generic message that invites retrying — which extends a lockout.
+      const errBody = await res.json().catch(() => ({}));
+      const msg = errBody.error_description || errBody.message || errBody.error || ("HTTP " + res.status);
+      lastErr = /flood|blocked|too many/i.test(msg)
+        ? "farmOS locked this account after repeated failed logins. Wait 15-30 minutes, then try ONCE."
+        : msg;
     } catch(e) {
       clearTimeout(timer);
+      if (!lastErr) lastErr = (e.name === "AbortError") ? "Connection timed out" : e.message;
     }
     return null;
   };
@@ -2614,7 +2601,7 @@ async function getToken(cfg) {
       }
     } catch(e) { /* try next */ }
   }
-  throw new Error("Auth failed — check credentials and URL");
+  throw new Error("Auth failed — " + (lastErr || "check credentials and URL"));
 }
 function apiUrl(path) {
   return window._useProxy ? "/proxy" + path : (JSON.parse(localStorage.getItem(LS.cfg) || "{}").url || "") + path;
@@ -3074,6 +3061,7 @@ async function fetchAnimalUUIDs(silent = false) {
                 })(),
         synced: true,
         fromFarmOS: true,
+        farmosBundle: log.type, // e.g. "log--medical" — exact bundle for PATCH URL
         status: attrs.status === "pending" ? "pending" : "done",
         loggedBy: (() => {
           const uidRel = log.relationships?.uid?.data;
@@ -3099,11 +3087,20 @@ async function fetchAnimalUUIDs(silent = false) {
       }
     });
 
-    // Merge — never overwrite unsynced local logs
-    const existingFarmOSIds = new Set(logs.filter(l => l.fromFarmOS).map(l => l.id));
-    let added = 0;
+    // Merge — farmOS is the source of truth for its own logs. Existing local
+    // copies are UPDATED in place so other workers' completions/edits show up.
+    // Exception: a local copy with unsynced changes (needsPatch / !synced)
+    // wins until it has been pushed.
+    const localByFarmOSId = {};
+    logs.forEach((l, i) => { if (l.fromFarmOS) localByFarmOSId[l.id] = i; });
+    let added = 0, updated = 0;
     farmosLogs.forEach(l => {
-      if (!existingFarmOSIds.has(l.id)) { logs.push(l); added++; }
+      const idx = localByFarmOSId[l.id];
+      if (idx === undefined) { logs.push(l); added++; }
+      else if (logs[idx].synced && !logs[idx].needsPatch) {
+        logs[idx] = l; // clean local copy — take current farmOS state
+        updated++;
+      }
     });
 
     localStorage.setItem(LS.logs, JSON.stringify(logs));
@@ -3116,7 +3113,7 @@ async function fetchAnimalUUIDs(silent = false) {
     if (statusEl) statusEl.textContent = "Synced " + now;
 
     if (!silent && el) {
-      el.textContent = `✅ Config synced, ${added} logs imported, animals updated`;
+      el.textContent = `✅ Config synced, ${added} new + ${updated} updated logs, animals updated`;
       el.style.color = "#3a7";
     }
 
@@ -3260,8 +3257,12 @@ async function syncToFarmOS() {
   } catch(e) { /* continue even if fetch fails */ }
 
   // ===== STEP 2: Push unsynced logs =====
-  const unsynced = logs.filter(l => !l.synced);
-  if (!unsynced.length) {
+  // New local logs POST; farmOS-fetched logs that were edited or completed
+  // PATCH (needsPatch) — a farmOS task is ONE log, never duplicated.
+  const toPost  = logs.filter(l => !l.synced && !l.needsPatch);
+  const toPatch = logs.filter(l => l.needsPatch);
+  const unsynced = toPost; // POST loop below iterates new logs only
+  if (!toPost.length && !toPatch.length) {
     logEl.textContent += "Nothing to push.\n";
   } else {
     const headers = {
@@ -3344,6 +3345,36 @@ async function syncToFarmOS() {
       } catch(e) {
         fail++;
         logEl.textContent += `❌ ${l.goat} ${l.type} — ${e.message}\n`;
+      }
+    }
+
+    // ── PATCH farmOS edits / task completions ──
+    // A farmOS task is ONE log: created pending, PATCHed to done. Never a 2nd POST.
+    for (const l of toPatch) {
+      // Use the exact bundle the log came from — the local-type map is not
+      // 1:1 (e.g. unknown bundles fall back to "obs"), so trust farmosBundle.
+      const farmosType = (l.farmosBundle && l.farmosBundle.startsWith("log--"))
+        ? l.farmosBundle.slice(5)
+        : (FARMOS_TYPE_MAP[l.type] || "activity");
+      const payload = buildFarmOSPayload(l);
+      payload.data.type = "log--" + farmosType;
+      payload.data.id = l.id; // JSON:API PATCH requires id in data object
+      const url = apiUrl("/api/log/" + farmosType + "/" + l.id);
+      try {
+        const res = await fetch(url, { method: "PATCH", headers, body: JSON.stringify(payload) });
+        if (res.ok) {
+          l.synced     = true;
+          l.needsPatch = false;
+          ok++;
+          logEl.textContent += `✅ PATCH ${l.goat} | ${farmosLogName(l)}\n`;
+        } else {
+          const txt = await res.text();
+          fail++;
+          logEl.textContent += `❌ PATCH ${l.goat} ${l.type} — ${res.status}: ${txt.slice(0,80)}\n`;
+        }
+      } catch(e) {
+        fail++;
+        logEl.textContent += `❌ PATCH ${l.goat} ${l.type} — ${e.message}\n`;
       }
     }
 
@@ -3571,6 +3602,7 @@ function saveEdit() {
   const edTime = document.getElementById("ed_time").value;
   l.time = edTime ? new Date(edTime).toISOString() : l.time;
   l.synced = false; // mark for re-sync since data changed
+  if (l.fromFarmOS) l.needsPatch = true; // edited fetched log = PATCH, not a new POST
 
   if (l.type === "weight") {
     l.data.weight = parseFloat(document.getElementById("ed_weight").value) || 0;
@@ -3662,11 +3694,6 @@ setTimeout(() => fetchAnimalUUIDs(true), 500);
     el.style.display = "block";
   }
 })();
-
-// ===== SERVICE WORKER =====
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
-}
 </script>
 
 <!-- ===== EDIT MODAL ===== -->
@@ -3686,7 +3713,7 @@ if ("serviceWorker" in navigator) {
 
 <!-- ===== FULLSCREEN PHOTO VIEWER ===== -->
 <div id="photoViewer" onclick="closePhotoViewer(event)">
-  <button id="photoViewerClose" onclick="closePhotoViewerForce()">✕</button>
+  <button id="photoViewerClose" onclick="closePhotoViewer()">✕</button>
   <img id="photoViewerImg" src="" alt="Photo">
 </div>
 
